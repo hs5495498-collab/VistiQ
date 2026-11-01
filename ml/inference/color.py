@@ -38,6 +38,14 @@ def _nearest_vistiq_color(rgb: tuple[int, int, int]) -> str:
     return best_name
 
 
+def nearest_vistiq_color(rgb: tuple[int, int, int]) -> str:
+    """Public alias of `_nearest_vistiq_color` — reused by
+    ml/inference/color_advanced.py (Phase 2) so both the original
+    deterministic pipeline and the newer K-means pipeline snap to the exact
+    same named color palette, rather than each maintaining its own copy."""
+    return _nearest_vistiq_color(rgb)
+
+
 def extract_dominant_color(image: Image.Image) -> tuple[str, tuple[int, int, int]]:
     """Returns (vistiq_color_name, dominant_rgb)."""
     rgb_image = image.convert("RGB")

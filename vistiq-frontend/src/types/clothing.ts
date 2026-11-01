@@ -48,10 +48,14 @@ export interface ClothingItem {
 
 /** Response from `POST /analyze-clothing`, mapped from the backend's
  * snake_case wire format by src/services/api.ts. category/confidence come
- * from the trained MobileNetV3 classifier (real ML); color comes from
- * deterministic image processing, not ML — hence colorConfidence is always
- * null. Both are suggestions for the user to review/correct, never applied
- * to the form silently. */
+ * from the trained MobileNetV3 classifier (real ML). color/colorConfidence/
+ * secondaryColor/colorHex/colorReliability/pattern/brightnessLevel all come
+ * from classical image processing (GrabCut segmentation + K-means color
+ * clustering, Phase 2) — NOT machine learning. colorConfidence is a
+ * cluster-dominance score (0-1) when that pipeline succeeds, and null when
+ * it fell back to the simpler Phase 1 method — never an ML confidence
+ * value either way. All of these are suggestions for the user to
+ * review/correct, never applied to the form silently. */
 export interface ClothingAnalysisResult {
   category: string
   confidence: number
@@ -59,6 +63,20 @@ export interface ClothingAnalysisResult {
   color: string
   colorConfidence: number | null
   message: string
+  /** A second notable garment color, only when it's a genuinely
+   * significant share of the image — absent for solid-colored garments. */
+  secondaryColor: string | null
+  colorHex: string | null
+  /** How much to trust `color`/`secondaryColor`: "high" (segmentation
+   * succeeded + a dominant cluster), "medium", or "low" (fell back to the
+   * simpler Phase 1 heuristic) — surface this as a hedge, not hide it. */
+  colorReliability: 'high' | 'medium' | 'low' | null
+  segmentationApplied: boolean
+  pattern: 'solid' | 'patterned' | 'unknown' | null
+  brightnessLevel: 'light' | 'medium' | 'dark' | 'unknown' | null
+  /** Non-blocking image-quality warnings (e.g. low resolution, blurry,
+   * too dark/bright) — the photo was still accepted and analyzed. */
+  qualityWarnings: string[]
 }
 
 export interface StylistSelection {

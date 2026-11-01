@@ -6,10 +6,16 @@ by the FastAPI backend (app/services/clothing_analysis.py imports this
 module directly — see that file for how the sibling `ml/` package is put on
 sys.path).
 
-Category + confidence come from the trained MobileNetV3 classifier (real ML).
-Color comes from ml/inference/color.py (deterministic image processing, not
-ML) — this distinction is preserved all the way to the API response, which
-is why color_confidence is always null.
+Category + confidence come from the trained MobileNetV3 classifier (real
+ML — the only learned model anywhere in this pipeline). Color, pattern, and
+brightness come from ml/inference/color_advanced.py (Phase 2: GrabCut
+segmentation + K-means clustering — classical image processing, NOT a
+trained/learned model), which itself falls back to the original Phase 1
+ml/inference/color.py deterministic method whenever the advanced pipeline
+can't produce a trustworthy result. `color_confidence` reflects that: it's
+populated with a real (non-ML) cluster-dominance score when the advanced
+pipeline succeeds, and null when it falls back to the Phase 1 method —
+never a machine-learning confidence value either way.
 """
 
 from pathlib import Path
@@ -18,7 +24,8 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from ml.inference.color import extract_dominant_color
+from ml.inference import segmentation
+from ml.inference.color_advanced import extract_color_profile
 from ml.training.config import (
     IMAGE_SIZE,
     IMAGENET_MEAN,
@@ -80,14 +87,27 @@ def predict_clothing(image: Image.Image, model_path: Path = MODEL_PATH) -> dict:
     category = VISTIQ_CATEGORIES[top_index]
     confidence = float(probabilities[top_index])
 
-    color_name, _dominant_rgb = extract_dominant_color(rgb_image)
+    segmentation_result = segmentation.segment_foreground(rgb_image)
+    color_profile = extract_color_profile(rgb_image, segmentation_result)
 
     return {
         "category": category,
         "confidence": round(confidence, 4),
         "low_confidence": confidence < LOW_CONFIDENCE_THRESHOLD,
-        "color": color_name,
-        "color_confidence": None,  # deterministic image processing, not ML — see color.py
+        "color": color_profile.primary.name,
+        # Real (non-ML) cluster-dominance score when the Phase 2 K-means
+        # pipeline succeeds; null when it fell back to the Phase 1
+        # deterministic method — see this module's docstring.
+        "color_confidence": (
+            color_profile.primary.percentage if color_profile.method == "kmeans" else None
+        ),
+        # --- Additive Phase 2 fields — see ml/inference/color_advanced.py ---
+        "color_hex": color_profile.primary.hex,
+        "secondary_color": color_profile.secondary.name if color_profile.secondary else None,
+        "color_reliability": color_profile.reliability,
+        "segmentation_applied": color_profile.segmentation_applied,
+        "pattern": color_profile.pattern,
+        "brightness_level": color_profile.brightness_level,
     }
 
 

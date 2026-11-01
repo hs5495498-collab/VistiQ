@@ -295,13 +295,24 @@ interface ApiClothingAnalysisResponse {
   color: string
   color_confidence: number | null
   message: string
+  // Phase 2 — all optional on the wire too (backend defaults them), so an
+  // older cached response shape would still map cleanly.
+  secondary_color?: string | null
+  color_hex?: string | null
+  color_reliability?: 'high' | 'medium' | 'low' | null
+  segmentation_applied?: boolean
+  pattern?: 'solid' | 'patterned' | 'unknown' | null
+  brightness_level?: 'light' | 'medium' | 'dark' | 'unknown' | null
+  quality_warnings?: string[]
 }
 
 /** Uploads a photo to POST /analyze-clothing for a real MobileNetV3
- * category prediction + deterministic dominant-color suggestion. Both are
- * suggestions only — the caller must let the user review/correct them
- * before saving, never apply them to a wardrobe record silently. Throws
- * ApiError with status 503 if no trained model is available on the backend. */
+ * category prediction + color analysis (GrabCut segmentation + K-means
+ * clustering, Phase 2 — classical image processing, not ML). All of it is
+ * suggestions only — the caller must let the user review/correct before
+ * saving, never apply it to a wardrobe record silently. Throws ApiError
+ * with status 503 if no trained model is available, or 400 for an image
+ * too small/corrupt to analyze. */
 export async function analyzeClothingImage(file: File): Promise<ClothingAnalysisResult> {
   const raw = await multipartFetch<ApiClothingAnalysisResponse>('/analyze-clothing', file)
   return {
@@ -310,6 +321,13 @@ export async function analyzeClothingImage(file: File): Promise<ClothingAnalysis
     lowConfidence: raw.low_confidence,
     color: raw.color,
     colorConfidence: raw.color_confidence,
+    secondaryColor: raw.secondary_color ?? null,
+    colorHex: raw.color_hex ?? null,
+    colorReliability: raw.color_reliability ?? null,
+    segmentationApplied: raw.segmentation_applied ?? false,
+    pattern: raw.pattern ?? null,
+    brightnessLevel: raw.brightness_level ?? null,
+    qualityWarnings: raw.quality_warnings ?? [],
     message: raw.message,
   }
 }

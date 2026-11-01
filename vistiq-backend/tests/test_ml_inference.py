@@ -35,7 +35,13 @@ def test_predict_clothing_returns_six_category_structure(monkeypatch):
 
     result = predict.predict_clothing(_solid_image())
 
-    assert set(result.keys()) == {"category", "confidence", "low_confidence", "color", "color_confidence"}
+    # Phase 1 keys (unchanged) + Phase 2's additive structured-color keys.
+    expected_keys = {
+        "category", "confidence", "low_confidence", "color", "color_confidence",
+        "color_hex", "secondary_color", "color_reliability", "segmentation_applied",
+        "pattern", "brightness_level",
+    }
+    assert set(result.keys()) == expected_keys
     assert result["category"] in VISTIQ_CATEGORIES
     assert result["category"] == VISTIQ_CATEGORIES[0]
 
@@ -50,14 +56,23 @@ def test_predict_clothing_confidence_is_valid_probability(monkeypatch):
     assert 0.0 <= result["confidence"] <= 1.0
 
 
-def test_predict_clothing_color_confidence_always_none(monkeypatch):
+def test_predict_clothing_color_confidence_type_matches_method(monkeypatch):
+    """Phase 2 regression test: color_confidence is a real (non-ML)
+    cluster-dominance score when the K-means pipeline succeeds, and null
+    only when it fell back to the Phase 1 deterministic method — never a
+    machine-learning confidence value either way."""
     logits = [10.0] + [0.0] * (len(VISTIQ_CATEGORIES) - 1)
     monkeypatch.setattr(predict, "_get_model", lambda model_path=None: _FakeModel(logits))
     monkeypatch.setattr(predict, "_model", None)
 
     result = predict.predict_clothing(_solid_image())
 
-    assert result["color_confidence"] is None
+    # Either the K-means pipeline ran (real float cluster-dominance score)
+    # or it fell back to the Phase 1 deterministic method (null) — no third
+    # possibility, and never a fabricated/placeholder value.
+    assert result["color_confidence"] is None or (
+        isinstance(result["color_confidence"], float) and 0.0 <= result["color_confidence"] <= 1.0
+    )
 
 
 def test_predict_clothing_flags_low_confidence_below_threshold(monkeypatch):

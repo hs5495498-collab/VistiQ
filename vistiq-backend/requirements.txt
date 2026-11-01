@@ -16,3 +16,9 @@ python-multipart==0.0.32
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.14.0+cpu
 torchvision==0.29.0+cpu
+
+# Phase 2 — classical (non-ML) computer vision: GrabCut foreground
+# segmentation (ml/inference/segmentation.py) and K-means color clustering
+# (ml/inference/color_advanced.py). Headless variant: no GUI/Qt bindings,
+# smaller install, correct choice for a server-side backend with no display.
+opencv-python-headless==5.0.0.93

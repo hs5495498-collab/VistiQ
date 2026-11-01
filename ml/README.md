@@ -5,13 +5,20 @@ Real, trained image understanding for VISTIQ's Add Clothing flow:
 ```
 user uploads clothing photo
         ↓
+image quality check (resolution/blur/exposure — warn, don't block; Phase 2)
+        ↓
 MobileNetV3-Small classifier (trained via transfer learning)
         ↓
 predicted VISTIQ category + confidence
         ↓
-deterministic dominant-color extraction (image processing, not ML)
+GrabCut foreground segmentation, with a deterministic fallback (Phase 2,
+classical image processing, not ML)
         ↓
-predicted color
+K-means color clustering over the (foreground-aware) pixels, with a
+deterministic fallback to the original Phase 1 method (Phase 2, classical
+image processing, not ML)
+        ↓
+primary + secondary color, pattern, brightness, reliability indicator
         ↓
 shown to the user for review before saving to the wardrobe
 ```
@@ -130,13 +137,85 @@ Training strategy — two-phase transfer learning (`ml/training/train.py`):
 
 ## Color extraction (not ML)
 
-`ml/inference/color.py` — deterministic dominant-color extraction via
-Pillow palette quantization, then nearest-neighbor mapping onto VISTIQ's
-supported color palette (defined in `ml/labels/clothing_categories.json`).
-No model, no training, no confidence score in the ML sense — this is why the
-inference response's `color_confidence` field is always `null`. Explicitly
-kept separate from the trained classifier so the API response never
-conflates a real model's confidence with a deterministic heuristic's output.
+Neither of the two pipelines below is machine learning. There is no
+training, no learned weights, and no dataset involved in either — both are
+classical, deterministic image-processing techniques, kept clearly
+separate from the trained MobileNetV3 classifier above.
+
+**Phase 1 (original, still present as the fallback):**
+`ml/inference/color.py` — Pillow palette quantization over the whole
+image (after dropping near-white pixels), then nearest-neighbor mapping
+onto VISTIQ's supported color palette (`ml/labels/clothing_categories.json`).
+Its one real weakness: it only filters near-white backgrounds, so any
+other background color (black, colored, patterned) competes directly with
+the garment for "dominant color."
+
+**Phase 2 (primary path — `ml/inference/segmentation.py` +
+`ml/inference/color_advanced.py`):**
+1. `segmentation.segment_foreground()` — OpenCV **GrabCut**, a classical
+   iterative foreground/background separation algorithm (not a trained
+   model, ships inside `opencv-python-headless`, no weights to download).
+   Seeded with a centered rectangle (assumes a roughly centered garment,
+   background nearer the edges — true for flat-lay/product photography).
+   Images are downscaled to `SEGMENTATION_MAX_DIMENSION` (300px) before
+   running GrabCut purely for speed — full-resolution GrabCut measured up
+   to **74 seconds** on one real upload in this project, vs. 0.3-1.8s after
+   downscaling. The resulting mask is validated (must cover between 5% and
+   95% of the image) and upscaled back to the original size; a mask
+   outside that range, a missing `cv2`, or any OpenCV error is treated as
+   a failed segmentation.
+2. `color_advanced.extract_color_profile()` — converts the (foreground-only,
+   when segmentation succeeded) pixel sample to **HSV**, then runs
+   **K-means** (`cv2.kmeans`, k=5) — an **unsupervised clustering
+   algorithm**, explicitly not a predictive/trained model — to group pixels
+   by color similarity. Clusters below 15% of the sample are treated as
+   insignificant. The top cluster becomes `color` (primary); a second
+   cluster is only reported as `secondary_color` if it's both significant
+   and a genuinely different named color. `pattern` ("solid"/"patterned")
+   and `brightness_level` are derived from the same cluster data at no
+   extra cost. K-means's center-initialization RNG is reseeded to a fixed
+   value before every call specifically so identical input always produces
+   identical output.
+3. **Fallback chain, never silent/empty:** if OpenCV is unavailable, the
+   pixel sample is too small/degenerate, or K-means itself errors,
+   `extract_color_profile()` falls back directly to the original Phase 1
+   `extract_dominant_color()` — wrapped in the same structured result
+   shape, with `reliability="low"` and `color_confidence=null`, so callers
+   never need to special-case which path actually ran.
+
+**`color_confidence`** reflects this: a real (non-ML) cluster-dominance
+score (0-1) when the Phase 2 pipeline succeeds, `null` when it fell back to
+the Phase 1 method — never a machine-learning confidence value either way.
+
+**Known limitations of GrabCut here** (not hidden): it assumes a roughly
+centered garment with background nearer the edges — a photo that doesn't
+match that framing (off-center, cropped tight, worn by a person filling the
+frame) will likely fail the foreground-fraction check and silently fall
+back to the Phase 1 method rather than produce a wrong mask. It also
+struggles when the background's color is close to the garment's own color.
+Manual qualitative review on this project's real uploaded photos (flat-lay
+style, roughly centered) showed GrabCut succeeding on essentially all of
+them, with sensible primary/secondary colors and plausible solid/patterned
+calls — but this has not been evaluated on a labeled dataset, and no
+accuracy percentage is claimed for it.
+
+## Image quality validation (Phase 2, not ML)
+
+`ml/inference/image_quality.py` — runs before the classifier, so a useless
+image doesn't waste a model forward pass. Three-way outcome:
+
+- **Invalid (rejected, HTTP 400):** only when the image is below
+  `MIN_HARD_DIMENSION` (32px either side) — genuinely no usable signal.
+- **Low-quality (accepted, with a warning):** low resolution (below the
+  model's native 224px input size), likely blurry (Laplacian variance below
+  a threshold, measured after resizing to a fixed size so the threshold
+  doesn't depend on the original photo's resolution), too dark, or
+  overexposed (mean grayscale brightness outside a configured range).
+- **Normal:** accepted, no warnings.
+
+All thresholds are named constants in that module with their justification
+in a comment next to them — not unexplained magic numbers — and are easy to
+retune in one place.
 
 ## Workspace layout
 
@@ -153,13 +232,16 @@ ml/
 │   └── evaluate.py                   (test accuracy, per-class P/R/F1, confusion matrix, plots)
 ├── inference/
 │   ├── predict.py                    (predict_clothing() — the contract FastAPI calls)
-│   └── color.py                      (deterministic dominant-color extraction)
+│   ├── color.py                      (Phase 1 deterministic color extraction — kept as the fallback)
+│   ├── segmentation.py               (Phase 2: GrabCut foreground segmentation)
+│   ├── color_advanced.py             (Phase 2: K-means color clustering, foreground-aware)
+│   └── image_quality.py              (Phase 2: resolution/blur/exposure checks)
 └── labels/
     └── clothing_categories.json      (dataset info, label mapping, color palette)
 
 models/
 ├── README.md
-└── vistiq_clothing_classifier.pt     (NOT YET PRESENT — produced by the Colab notebook)
+└── vistiq_clothing_classifier.pt     (present — see models/README.md for how it was verified)
 ```
 
 ## Running the notebook

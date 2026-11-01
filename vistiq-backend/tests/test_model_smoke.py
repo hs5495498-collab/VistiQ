@@ -47,4 +47,11 @@ def test_real_inference_on_real_uploaded_photos():
         assert result["category"] in VISTIQ_CATEGORIES
         assert 0.0 <= result["confidence"] <= 1.0
         assert isinstance(result["low_confidence"], bool)
-        assert result["color_confidence"] is None
+        # Phase 2: color_confidence is a real cluster-dominance score (float)
+        # when the K-means pipeline succeeds, null if it fell back to the
+        # Phase 1 deterministic method — either is valid on a real photo.
+        assert result["color_confidence"] is None or (
+            isinstance(result["color_confidence"], float) and 0.0 <= result["color_confidence"] <= 1.0
+        )
+        assert result["pattern"] in {"solid", "patterned", "unknown"}
+        assert result["brightness_level"] in {"light", "medium", "dark", "unknown"}

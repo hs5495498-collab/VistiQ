@@ -279,9 +279,43 @@ export default function AddItem() {
               >
                 {analysisResult.message}
               </p>
+
+              {(analysisResult.secondaryColor || analysisResult.colorReliability) && (
+                <p className="flex flex-wrap items-center gap-1.5 font-body text-body-sm text-secondary">
+                  {analysisResult.secondaryColor && (
+                    <span>
+                      Secondary color: <span className="font-label text-primary">{analysisResult.secondaryColor}</span>
+                    </span>
+                  )}
+                  {analysisResult.colorReliability && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 font-label-sm text-label-sm ${
+                        analysisResult.colorReliability === 'high'
+                          ? 'bg-canvas text-primary'
+                          : 'bg-amber-100 text-amber-800'
+                      }`}
+                    >
+                      Color reliability: {analysisResult.colorReliability}
+                      {!analysisResult.segmentationApplied && ' (background may have influenced this guess)'}
+                    </span>
+                  )}
+                </p>
+              )}
+
               <p className="font-body text-body-sm text-secondary">
                 Category and color below are pre-filled from this prediction — please review and correct them if needed.
               </p>
+            </div>
+          )}
+
+          {!analyzing && analysisResult && analysisResult.qualityWarnings.length > 0 && (
+            <div className="flex items-start gap-2.5 rounded-lg bg-amber-50 p-3">
+              <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
+              <div className="font-body text-body-sm text-amber-700">
+                {analysisResult.qualityWarnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
             </div>
           )}
 
