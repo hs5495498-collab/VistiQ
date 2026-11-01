@@ -10,7 +10,7 @@ this prediction.
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.schemas.clothing_analysis import ClothingAnalysisResponse
-from app.services.clothing_analysis import ModelUnavailableError, analyze_clothing_image
+from app.services.clothing_analysis import ImageQualityError, ModelUnavailableError, analyze_clothing_image
 from app.services.image_validation import read_and_validate_image
 
 router = APIRouter(tags=["clothing-analysis"])
@@ -26,6 +26,8 @@ async def analyze_clothing(file: UploadFile = File(...)):
 
     try:
         return analyze_clothing_image(image)
+    except ImageQualityError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except ModelUnavailableError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
