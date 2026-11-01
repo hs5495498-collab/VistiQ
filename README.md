@@ -14,15 +14,17 @@ VISTIQ addresses this directly. Rather than letting a user filter/search their o
 
 ## 3. How VISTIQ recommends outfits
 
-For a given request (occasion, optional style, optional weather, a wardrobe item pool, optional "anchor" item, and `top_k`):
+For a given request (occasion, optional style, optional weather, a wardrobe item pool, optional "anchor" item, optional personalization preferences, and `top_k`):
 
-1. **Candidate generation** — the wardrobe pool is grouped by category (Tops, Bottoms, Outerwear, Dresses, Footwear, Accessories) and matched against a set of outfit templates (e.g. Top+Bottom+Footwear, Dress+Footwear). Every valid combination of items across the matching templates is generated as a candidate outfit.
-2. **Compatibility scoring** — each candidate is scored 0–100 from six weighted components: color compatibility (30%), category compatibility (20%), style compatibility (20%), occasion fit (15%), user wear-history preference (10%), and weather/season fit (5%).
-3. **Ranking** — all candidates are sorted by score (descending), with a deterministic tiebreaker so identical requests always return identical results.
-4. **Explanation** — each returned outfit includes a natural-language reason derived directly from which scoring components were actually high for that specific outfit (not a generic message).
-5. **Anchoring** — a user can select one specific wardrobe item; every returned outfit is guaranteed to include it, and the recommendation set changes when the anchor changes.
+1. **Candidate generation** — the wardrobe pool is grouped by category (Tops, Bottoms, Outerwear, Dresses, Footwear, Accessories) and matched against a set of outfit templates (e.g. Top+Bottom+Footwear, Dress+Footwear). Every valid combination of items across the matching templates is generated as a candidate outfit — this doubles as the engine's hard constraint filter (a template's required categories must all be present; an anchor item must be structurally includable), so an invalid combination is never generated at all, not generated-then-rejected.
+2. **Compatibility scoring** — each candidate is scored 0–100 from six weighted components: color compatibility (30%), category compatibility (20%), style compatibility (20%), occasion fit (15%), user wear-history preference (10%), and weather/season fit (5%). Color compatibility uses real color theory — hue-wheel relationships (complementary/analogous/monochromatic), VISTIQ's established classic/neutral pairings, each item's optional secondary color, and down-weighting when an item's photo-analyzed color reliability was low — not just a lookup table (see `app/recommendation/color_theory.py`).
+3. **Personalization** — optional, request-scoped preferences (preferred/avoided colors, favoring favorited items) apply a small, capped adjustment on top of the compatibility score. No accounts, nothing persisted — every preference lives only on that one request.
+4. **Ranking** — all candidates are sorted by the (personalization-adjusted) score, descending, with a deterministic tiebreaker so identical requests always return identical results.
+5. **Diversity-aware selection** — a greedy, Jaccard-overlap reranking (a simple, deterministic form of Maximal Marginal Relevance) reduces near-duplicate outfits among the top results, without ever promoting a lower-scoring outfit purely for being different — the single best-scored outfit is always returned first. Can be disabled per-request (`diversify: false`).
+6. **Explanation** — each returned outfit includes both a natural-language reason and a structured breakdown (per-dimension scores, specific positive reasons, and honest caveats such as low color-extraction reliability or a partial outfit) derived directly from which scoring components were actually high for that specific outfit — never a generic or invented reason.
+7. **Anchoring** — a user can select one specific wardrobe item; every returned outfit is guaranteed to include it (through every stage above, including diversity selection), and the recommendation set changes when the anchor changes. If no valid outfit can include the anchor, the response explains that specifically.
 
-This is a rule-based, fully explainable, deterministic recommendation engine — not a database filter, and not (yet) a learned ranking model.
+This is a deterministic, rule-based, fully explainable hybrid recommendation engine — not a database filter, and not a learned ranking model.
 
 ## 4. System architecture
 
@@ -68,16 +70,19 @@ Frontend
 ## 7. Database & image storage
 
 - SQLite, via SQLAlchemy ORM, file at `vistiq-backend/data/vistiq.db`.
-- Single table `clothing_items`: id, name, category, subcategory, color, secondary_color, style, occasion, season, gender, image, description, wear_count, created_at.
+- Single table `clothing_items`: id, name, category, subcategory, color, secondary_color, style, occasion, season, gender, image, description, wear_count, is_favorite, color_reliability, created_at.
 - Tables are created automatically on backend startup (`init_db()`); no manual migration step is required for this project's scope.
 - **Wardrobe photos** are stored as local files under `vistiq-backend/data/uploads/`, not as base64 blobs in SQLite. Add Item uploads the photo to `POST /wardrobe/images` (`app/services/image_storage.py`), which validates it (same checks as `/analyze-clothing`: JPEG/PNG/WEBP only, 10MB max, must actually decode as an image), saves it under a random server-generated filename — the original filename is never trusted or used — and returns a relative URL (e.g. `/uploads/<uuid>.jpg`). That URL is what's stored in `clothing_items.image` and what `GET /uploads/...` (a `StaticFiles` mount in `app/main.py`) serves back. Files on disk are independent of the running process, so uploaded photos survive both a page refresh and a full backend restart.
 
 ## 8. Recommendation engine
 
 Implemented in `vistiq-backend/app/recommendation/`:
-- `rules.py` — pure, deterministic compatibility functions (color pair harmony, category complementarity, style compatibility, occasion matching, weather/season matching). No side effects, no database access.
-- `scoring.py` — combines the rule outputs into a single weighted 0–100 score per candidate outfit using the weights in §3.
-- `engine.py` — candidate generation from outfit templates, deduplication, scoring, ranking, and explanation generation.
+- `rules.py` — pure, deterministic compatibility functions (category complementarity, style compatibility, occasion matching, weather/season matching), unchanged since Phase 1 and still directly unit-tested on their own.
+- `color_theory.py` — color compatibility via HSV hue-wheel relationships (complementary/analogous/monochromatic/contrasting) over VISTIQ's existing 14-color named palette, falling back to `rules.py`'s proven classic/neutral pairings first; blends in each item's optional secondary color; down-weights a pair's score when either item's stored `color_reliability` is "medium"/"low" (an unknown reliability is never treated as a known-bad one).
+- `scoring.py` — combines color/category/style/occasion/weather/preference into a single weighted 0–100 score per candidate outfit (weights in §3), plus the evidence (e.g. which color relationships were found) used for explanations.
+- `personalization.py` — optional, request-scoped preference adjustments (preferred/avoided colors, favorite items) — no accounts, nothing persisted.
+- `diversity.py` — greedy, Jaccard-overlap reranking to reduce near-duplicate outfits among the results.
+- `engine.py` — candidate generation from outfit templates, deduplication, scoring, personalization, diversity selection, and structured explanation generation.
 
 The engine is intentionally free of randomness: the same request against the same database state always returns the same result.
 

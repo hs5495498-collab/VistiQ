@@ -53,6 +53,11 @@ def _add_missing_columns() -> None:
             connection.execute(
                 text("ALTER TABLE clothing_items ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0")
             )
+    if "color_reliability" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE clothing_items ADD COLUMN color_reliability VARCHAR")
+            )
 
 
 def get_db() -> Session:

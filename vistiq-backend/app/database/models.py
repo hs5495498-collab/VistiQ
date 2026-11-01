@@ -20,6 +20,13 @@ class ClothingItem(Base):
     subcategory: Mapped[str | None] = mapped_column(String, nullable=True)
     color: Mapped[str] = mapped_column(String, nullable=False)
     secondary_color: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Phase 3: populated when a new item is saved from a Phase 2 photo
+    # analysis ("high"/"medium"/"low"). NULL for items created before this
+    # column existed, or created without a photo analysis — the
+    # recommendation engine treats NULL as "unknown" and does NOT penalize
+    # it, exactly like a known-high-reliability item (see
+    # app/recommendation/color_theory.py).
+    color_reliability: Mapped[str | None] = mapped_column(String, nullable=True)
     style: Mapped[str] = mapped_column(String, nullable=False)
     occasion: Mapped[str | None] = mapped_column(String, nullable=True)
     season: Mapped[str | None] = mapped_column(String, nullable=True)

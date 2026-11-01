@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Check, Sparkles, Wand2 } from 'lucide-react'
+import { AlertTriangle, Check, Sparkles, Wand2 } from 'lucide-react'
 import GarmentImage from '../components/GarmentImage'
 import type { ClothingItem, OutfitRecommendation, RecommendationResponse } from '../types/clothing'
 
@@ -12,26 +12,21 @@ interface RecommendationsLocationState {
   wardrobeItems?: ClothingItem[]
 }
 
-/** /recommend's `reason` string is generated deterministically from real
- * score thresholds (see app/recommendation/engine.py _generate_explanation)
- * — these patterns mirror its exact phrasing, so a bullet only ever appears
- * when the backend's own sentence actually said so. Category compatibility
- * isn't spelled out in that sentence but is a structural guarantee of every
- * generated outfit (rules.py only ever pairs complementary categories), so
- * it's included unconditionally rather than parsed. */
-function explanationPoints(reason: string): string[] {
-  const points: string[] = []
-  if (/colors? \(.+?\) complement each other/i.test(reason)) points.push('Color compatibility')
-  points.push('Compatible clothing categories')
-  if (/consistent .+? style/i.test(reason)) points.push('Style compatibility')
-  if (/fits the .+? occasion/i.test(reason)) points.push('Occasion suitability')
-  if (/suits .+? weather/i.test(reason)) points.push('Weather suitability')
-  points.push('Available in your selected wardrobe')
-  return points
+const DIMENSION_LABELS: Record<string, string> = {
+  color: 'Color',
+  category: 'Category',
+  style: 'Style',
+  occasion: 'Occasion',
+  weather: 'Weather',
+  preference: 'Wear history',
 }
 
 function OutfitCard({ outfit, imageById }: { outfit: OutfitRecommendation; imageById: Map<number, string> }) {
-  const points = explanationPoints(outfit.reason)
+  // Phase 3: positiveReasons/caveats come directly from the backend's own
+  // scoring evidence (app/recommendation/engine.py's _build_explanation) —
+  // no regex-guessing from prose text anymore, so a bullet here always
+  // corresponds to something the engine actually found true.
+  const points = outfit.positiveReasons.length > 0 ? outfit.positiveReasons : ['Available in your selected wardrobe']
 
   return (
     <div className="overflow-hidden rounded-2xl bg-surface shadow-sm">
@@ -66,7 +61,21 @@ function OutfitCard({ outfit, imageById }: { outfit: OutfitRecommendation; image
         ))}
       </div>
 
-      <div className="mt-5 border-t border-border px-5 py-5 md:px-6">
+      {Object.keys(outfit.dimensionScores).length > 0 && (
+        <div className="mt-5 flex flex-wrap gap-1.5 px-5 md:px-6">
+          {Object.entries(outfit.dimensionScores).map(([dimension, value]) => (
+            <span
+              key={dimension}
+              title={`${DIMENSION_LABELS[dimension] ?? dimension}: ${Math.round(value * 100)}%`}
+              className="rounded-full bg-canvas px-2.5 py-1 font-label-sm text-label-sm text-secondary"
+            >
+              {DIMENSION_LABELS[dimension] ?? dimension} {Math.round(value * 100)}%
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-4 border-t border-border px-5 py-5 md:px-6">
         <p className="font-label text-label text-primary">Why we recommend it</p>
         <ul className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {points.map((point) => (
@@ -76,6 +85,18 @@ function OutfitCard({ outfit, imageById }: { outfit: OutfitRecommendation; image
             </li>
           ))}
         </ul>
+
+        {outfit.caveats.length > 0 && (
+          <div className="mt-3 flex flex-col gap-1.5 rounded-lg bg-amber-50 p-3">
+            {outfit.caveats.map((caveat) => (
+              <p key={caveat} className="flex items-start gap-1.5 font-body text-body-sm text-amber-700">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                {caveat}
+              </p>
+            ))}
+          </div>
+        )}
+
         <p className="mt-3 font-body text-body-sm italic leading-relaxed text-secondary">{outfit.reason}</p>
       </div>
     </div>

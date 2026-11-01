@@ -125,6 +125,7 @@ interface ApiClothingItem {
   wear_count: number
   created_at: string
   is_favorite: boolean
+  color_reliability?: 'high' | 'medium' | 'low' | null
 }
 
 export interface ClothingItemCreateInput {
@@ -140,6 +141,7 @@ export interface ClothingItemCreateInput {
   image?: string | null
   description?: string | null
   isFavorite?: boolean
+  colorReliability?: 'high' | 'medium' | 'low' | null
 }
 
 export type ClothingItemUpdateInput = Partial<ClothingItemCreateInput> & { wearCount?: number }
@@ -161,6 +163,7 @@ function mapApiClothingItem(raw: ApiClothingItem): ClothingItem {
     wearCount: raw.wear_count,
     addedAt: raw.created_at,
     isFavorite: raw.is_favorite,
+    colorReliability: raw.color_reliability ?? undefined,
   }
 }
 
@@ -178,6 +181,7 @@ function toApiCreatePayload(input: ClothingItemCreateInput) {
     image: input.image ?? null,
     description: input.description ?? null,
     is_favorite: input.isFavorite ?? false,
+    color_reliability: input.colorReliability ?? null,
   }
 }
 
@@ -196,6 +200,7 @@ function toApiUpdatePayload(input: ClothingItemUpdateInput) {
   if (input.description !== undefined) payload.description = input.description
   if (input.wearCount !== undefined) payload.wear_count = input.wearCount
   if (input.isFavorite !== undefined) payload.is_favorite = input.isFavorite
+  if (input.colorReliability !== undefined) payload.color_reliability = input.colorReliability
   return payload
 }
 
@@ -244,6 +249,9 @@ interface ApiOutfitRecommendation {
   score: number
   items: ApiRecommendedItem[]
   reason: string
+  dimension_scores?: Record<string, number>
+  positive_reasons?: string[]
+  caveats?: string[]
 }
 
 interface ApiRecommendationResponse {
@@ -265,6 +273,13 @@ export async function getRecommendation(request: RecommendationRequest): Promise
     wardrobe_item_ids: request.wardrobeItemIds.map(Number),
     selected_item_id: request.selectedItemId != null ? Number(request.selectedItemId) : null,
     top_k: request.topK,
+    // Phase 3 — omitted entirely when undefined, so an unmodified caller
+    // sends exactly the same request shape as before Phase 3 and gets the
+    // backend's own safe defaults (no preference, diversify on).
+    ...(request.preferredColors !== undefined && { preferred_colors: request.preferredColors }),
+    ...(request.avoidedColors !== undefined && { avoided_colors: request.avoidedColors }),
+    ...(request.preferFavorites !== undefined && { prefer_favorites: request.preferFavorites }),
+    ...(request.diversify !== undefined && { diversify: request.diversify }),
   }
 
   const raw = await apiFetch<ApiRecommendationResponse>('/recommend', {
@@ -279,7 +294,15 @@ export async function getRecommendation(request: RecommendationRequest): Promise
       weather: raw.request.weather,
       selectedItemId: raw.request.selected_item_id,
     },
-    recommendations: raw.recommendations,
+    recommendations: raw.recommendations.map((rec) => ({
+      rank: rec.rank,
+      score: rec.score,
+      items: rec.items,
+      reason: rec.reason,
+      dimensionScores: rec.dimension_scores ?? {},
+      positiveReasons: rec.positive_reasons ?? [],
+      caveats: rec.caveats ?? [],
+    })),
     message: raw.message,
   }
 }

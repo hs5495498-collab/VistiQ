@@ -1,7 +1,8 @@
 """
-Per-item and per-outfit scoring built on top of the pure rules in rules.py.
+Per-item and per-outfit scoring built on top of the pure rules in rules.py
+and (Phase 3) the color-theory module in color_theory.py.
 
-score_outfit() is the single place the five weighted dimensions come
+score_outfit() is the single place the six weighted dimensions come
 together into one final 0-100 score. Nothing here is random and nothing is
 hard-coded — every score is computed from the actual items and request.
 """
@@ -9,7 +10,7 @@ hard-coded — every score is computed from the actual items and request.
 import itertools
 
 from app.database.models import ClothingItem
-from app.recommendation import rules
+from app.recommendation import color_theory, rules
 
 # Weights must sum to 1.0.
 WEIGHT_COLOR = 0.30
@@ -22,8 +23,14 @@ WEIGHT_WEATHER = 0.05
 WEAR_COUNT_CAP = 10  # wear_count at/above this gets the full preference score
 
 
-def calculate_color_compatibility(item_a: ClothingItem, item_b: ClothingItem) -> float:
-    return rules.color_pair_score(item_a.color, item_b.color)
+def calculate_color_compatibility(item_a: ClothingItem, item_b: ClothingItem) -> tuple[float, str]:
+    """Phase 3: real color-theory compatibility (hue relationships +
+    secondary colors + reliability-aware down-weighting), not just the
+    classic-pairs-or-default lookup. See color_theory.py. rules.py's
+    original color_pair_score() is left completely untouched — it's still
+    directly unit-tested in tests/test_recommendation_rules.py — this is
+    the one call site that now points at the richer function instead."""
+    return color_theory.color_pair_compatibility(item_a, item_b)
 
 
 def calculate_category_compatibility(item_a: ClothingItem, item_b: ClothingItem) -> float:
@@ -53,12 +60,25 @@ def score_outfit(
     occasion: str,
     style: str | None,
     weather: str | None,
-) -> tuple[float, dict[str, float]]:
-    """Score one candidate outfit. Returns (final_score_0_100, breakdown_0_1)."""
+) -> tuple[float, dict[str, float], dict]:
+    """Score one candidate outfit.
+
+    Returns (final_score_0_100, breakdown_0_1, evidence) — `evidence` is
+    Phase 3's addition: the concrete, non-fabricated facts behind the
+    scores (which color relationships were actually found, whether any
+    item's color reliability was low), used by
+    app/recommendation/engine.py to build a structured, honest explanation
+    instead of a generic one. Nothing here is random and nothing is
+    hard-coded — every score and every piece of evidence is computed from
+    the actual items and request.
+    """
     pairs = list(itertools.combinations(items, 2))
 
+    color_tags: list[str] = []
     if pairs:
-        color_score = sum(calculate_color_compatibility(a, b) for a, b in pairs) / len(pairs)
+        color_results = [calculate_color_compatibility(a, b) for a, b in pairs]
+        color_score = sum(score for score, _tag in color_results) / len(color_results)
+        color_tags = [tag for _score, tag in color_results]
         category_score = sum(calculate_category_compatibility(a, b) for a, b in pairs) / len(pairs)
         style_score = sum(calculate_style_compatibility(a, b) for a, b in pairs) / len(pairs)
     else:
@@ -91,4 +111,8 @@ def score_outfit(
         "weather": weather_score,
         "preference": preference_score,
     }
-    return round(weighted * 100, 1), breakdown
+    evidence = {
+        "color_tags": color_tags,
+        "low_color_reliability": any("uncertain (low color reliability)" == tag for tag in color_tags),
+    }
+    return round(weighted * 100, 1), breakdown, evidence

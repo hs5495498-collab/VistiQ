@@ -1,12 +1,32 @@
 """
-The VISTIQ recommendation pipeline:
+The VISTIQ recommendation pipeline (Phase 3 — hybrid architecture):
 
-    wardrobe pool -> group by category -> pick outfit templates that fit
-    -> generate candidate outfits -> score each with scoring.score_outfit()
-    -> rank -> explain -> return the top_k.
+    1. Candidate generation   wardrobe pool -> group by category -> pick
+                               outfit templates that fit -> generate
+                               candidate outfits (unchanged since Phase 1)
+    2. Hard constraint filter  a template's required categories must all
+                               be present, and the anchor item (if any)
+                               must be structurally includable — this IS
+                               the hard filter: an outfit that can't
+                               satisfy it is never generated at all, not
+                               generated-then-rejected
+    3. Compatibility scoring  scoring.score_outfit() — six weighted
+                               dimensions, color now using real color
+                               theory (color_theory.py)
+    4. Preference-aware rank  personalization.py's small, capped
+                               adjustment (preferred/avoided colors,
+                               favorites) added to the compatibility score,
+                               then re-sorted
+    5. Diversity selection    diversity.py's greedy, Jaccard-based rerank
+                               among the top-ranked candidates
+    6. Explanation generation _build_explanation() — structured, built
+                               only from the evidence scoring.py actually
+                               produced, never invented
 
-This is a rule-based, explainable engine — no ML, no randomness. The same
-request against the same database rows always returns the same result.
+Each stage is a separate, independently testable function below. This is
+a deterministic, rule-based, explainable hybrid engine — no ML, no
+randomness anywhere in it — the same request against the same database
+rows always returns the same result.
 """
 
 import itertools
@@ -15,7 +35,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.database.models import ClothingItem
-from app.recommendation import rules
+from app.recommendation import diversity, personalization, rules
 from app.recommendation.scoring import score_outfit
 from app.schemas.recommendation import RecommendationRequest
 
@@ -144,39 +164,78 @@ def _item_summary(item: ClothingItem) -> dict:
     }
 
 
-def _generate_explanation(
+_NOTABLE_COLOR_TAGS = {
+    "classic pairing", "neutral combination", "neutral pairing",
+    "monochromatic", "complementary colors", "analogous colors",
+}
+
+
+def _build_explanation(
     items: list[ClothingItem],
     breakdown: dict[str, float],
+    evidence: dict,
     request: RecommendationRequest,
     is_partial: bool,
     missing_categories: list[str],
-) -> str:
-    reasons = []
+    personalization_reasons: list[str],
+) -> tuple[str, list[str], list[str]]:
+    """Phase 3 structured explainability. Returns (prose_reason,
+    positive_reasons, caveats) — every one of them built only from
+    evidence that's actually true for THIS specific outfit (scoring.py's
+    `breakdown`/`evidence`, or the request's own personalization result).
+    A dimension with no clear signal simply produces no reason for it —
+    never a fabricated, generic one."""
+    positive_reasons: list[str] = []
+    caveats: list[str] = []
 
-    if breakdown["color"] >= 0.8:
-        colors = ", ".join(sorted({i.color for i in items if i.color}))
-        reasons.append(f"the colors ({colors}) complement each other")
+    # Color: driven by color_theory.py's actual per-pair relationship tags
+    # (evidence["color_tags"]), not just "the average happened to be high"
+    # — "colors complement each other" is only ever said when a genuinely
+    # classic/neutral/complementary/analogous/monochromatic relationship
+    # was actually found for at least one pair in this outfit.
+    notable_tags = sorted({tag for tag in evidence.get("color_tags", []) if tag in _NOTABLE_COLOR_TAGS})
+    if notable_tags and breakdown["color"] >= 0.75:
+        positive_reasons.append(f"Colors work well together ({', '.join(notable_tags)})")
+
     if breakdown["style"] >= 0.8:
         style_label = request.style or (items[0].style if items else "consistent")
-        reasons.append(f"the pieces share a consistent {style_label} style")
+        positive_reasons.append(f"Consistent {style_label} style across the outfit")
+
     if breakdown["occasion"] >= 0.8:
-        reasons.append(f"it fits the {request.occasion} occasion")
+        positive_reasons.append(f"Matches the {request.occasion} occasion")
+
     if request.weather and breakdown["weather"] >= 0.8:
-        reasons.append(f"it suits {request.weather} weather")
+        positive_reasons.append(f"Suits {request.weather} weather")
 
-    if not reasons:
-        reasons.append("it is the most balanced combination available from your selected wardrobe pool")
+    if breakdown["category"] >= 0.9:
+        positive_reasons.append("Good category coverage for a complete outfit")
 
-    explanation = "Recommended because " + " and ".join(reasons) + "."
+    if request.selected_item_id is not None:
+        anchor_names = [item.name for item in items if item.id == request.selected_item_id]
+        if anchor_names:
+            positive_reasons.append(f"Includes your anchor item ({anchor_names[0]})")
 
+    positive_reasons.extend(f"Personalization: {reason}" for reason in personalization_reasons)
+
+    if evidence.get("low_color_reliability"):
+        caveats.append(
+            "One or more items' color was extracted with low reliability — "
+            "the color match above may be less certain than it looks."
+        )
     if is_partial and missing_categories:
         missing_text = " and ".join(missing_categories)
-        explanation += (
-            f" Note: no {missing_text} was available in your selected wardrobe pool, "
-            "so this is a partial outfit."
-        )
+        caveats.append(f"No {missing_text} was available in your selected wardrobe pool — this is a partial outfit.")
+    if breakdown["color"] < 0.55:
+        caveats.append("Color compatibility for this combination is uncertain, not confirmed to look bad.")
 
-    return explanation
+    if positive_reasons:
+        prose = "Recommended because " + "; ".join(reason[0].lower() + reason[1:] for reason in positive_reasons) + "."
+    else:
+        prose = "Recommended because it is the most balanced combination available from your selected wardrobe pool."
+    if caveats:
+        prose += " " + " ".join(caveats)
+
+    return prose, positive_reasons, caveats
 
 
 def _context(request: RecommendationRequest) -> dict:
@@ -223,15 +282,19 @@ def build_recommendations(db: Session, request: RecommendationRequest) -> dict:
     templates = _select_templates(available_categories, selected_item)
 
     if not templates:
-        return {
-            "request": _context(request),
-            "recommendations": [],
-            "message": (
+        if selected_item is not None:
+            message = (
+                f"No valid outfit could include your anchor item ({selected_item.name}, "
+                f"{selected_item.category}) together with the rest of your selected wardrobe pool. "
+                "Try a different anchor, or include items from a category that pairs with it."
+            )
+        else:
+            message = (
                 "Not enough variety in the selected wardrobe pool to build an outfit — "
                 "try including items from at least two complementary categories "
                 "(e.g. Tops and Bottoms)."
-            ),
-        }
+            )
+        return {"request": _context(request), "recommendations": [], "message": message}
 
     # Generate candidate outfits from every satisfiable template, then dedupe
     # by exact item-id set (the same combination can arise from more than
@@ -253,26 +316,63 @@ def build_recommendations(db: Session, request: RecommendationRequest) -> dict:
             "message": "No valid outfit combinations could be built from the selected wardrobe pool.",
         }
 
+    # --- Stage 3: compatibility scoring -----------------------------------
+    # score_outfit() now returns (score, breakdown, evidence) — evidence is
+    # what _build_explanation() below uses to avoid inventing reasons.
     scored = [
         (*score_outfit(items, request.occasion, request.style, request.weather), template, items)
         for template, items in unique_combos
     ]
-    # Deterministic ordering: highest score first, then a stable tiebreaker
-    # on the outfit's item ids so ties never depend on dict/set iteration order.
-    scored.sort(key=lambda s: (-s[0], tuple(sorted(i.id for i in s[3]))))
 
-    top = scored[: request.top_k]
+    # --- Stage 4: preference-aware ranking ---------------------------------
+    # personalization.py applies a small, capped additive adjustment (can
+    # be zero, if the request has no preferences — the default) on top of
+    # the raw compatibility score, then everything is re-sorted by the
+    # adjusted value. Deterministic ordering: the adjusted score first,
+    # then a stable tiebreaker on the outfit's item ids so ties never
+    # depend on dict/set iteration order.
+    adjusted = []
+    for final_score, breakdown, evidence, template, items in scored:
+        points, personalization_reasons = personalization.personalization_adjustment(items, request)
+        adjusted_score = round(final_score + points, 1)
+        adjusted.append((adjusted_score, breakdown, evidence, template, items, personalization_reasons))
+    adjusted.sort(key=lambda s: (-s[0], tuple(sorted(i.id for i in s[4]))))
 
+    # --- Stage 5: diversity-aware selection ---------------------------------
+    # On by default (request.diversify), opt-out rather than opt-in — see
+    # diversity.py for the full relevance-vs-diversity trade-off. Every
+    # candidate here already structurally includes the anchor item (if
+    # any), so diversity selection can reorder/choose among them but can
+    # never remove it.
+    if request.diversify:
+        selected = diversity.select_diverse(
+            adjusted,
+            request.top_k,
+            score_of=lambda candidate: candidate[0],
+            item_ids_of=lambda candidate: frozenset(item.id for item in candidate[4]),
+        )
+    else:
+        selected = adjusted[: request.top_k]
+
+    # --- Stage 6: explanation generation ------------------------------------
     recommendations = []
-    for rank, (final_score, breakdown, template, items) in enumerate(top, start=1):
+    for rank, (adjusted_score, breakdown, evidence, template, items, personalization_reasons) in enumerate(
+        selected, start=1
+    ):
         is_partial = template["tier"] == "partial"
         missing = PARTIAL_MISSING_HINTS.get(template["name"], []) if is_partial else []
+        prose, positive_reasons, caveats = _build_explanation(
+            items, breakdown, evidence, request, is_partial, missing, personalization_reasons
+        )
         recommendations.append(
             {
                 "rank": rank,
-                "score": final_score,
+                "score": max(0.0, min(100.0, adjusted_score)),
                 "items": [_item_summary(i) for i in items],
-                "reason": _generate_explanation(items, breakdown, request, is_partial, missing),
+                "reason": prose,
+                "dimension_scores": breakdown,
+                "positive_reasons": positive_reasons,
+                "caveats": caveats,
             }
         )
 
