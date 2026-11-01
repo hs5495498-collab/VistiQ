@@ -1,0 +1,58 @@
+{
+  "vistiq_categories": ["Tops", "Bottoms", "Outerwear", "Dresses", "Footwear", "Accessories"],
+
+  "dataset": {
+    "name": "clothing-dataset-small",
+    "author": "Alexey Grigorev",
+    "source_url": "https://github.com/alexeygrigorev/clothing-dataset-small",
+    "parent_dataset_url": "https://github.com/alexeygrigorev/clothing-dataset-full",
+    "license": "CC0 (public domain)",
+    "description": "Pre-split (train/validation/test) subset covering the 10 most common classes from the larger clothing-dataset-full (5,000+ real photographed clothing images). We use the small subset because it is small enough to train quickly in Colab, already split by the dataset author, and requires no Kaggle account/API key — just a plain git clone.",
+    "verified_classes": ["dress", "hat", "longsleeve", "outwear", "pants", "shirt", "shoes", "shorts", "skirt", "t-shirt"],
+    "verification_method": "Confirmed directly against the repository's live file listing via the GitHub API (repos/alexeygrigorev/clothing-dataset-small/contents and .../contents/train) before writing this mapping, rather than assumed from memory.",
+    "verification_date": "2026-09-15"
+  },
+
+  "label_mapping": {
+    "t-shirt": "Tops",
+    "shirt": "Tops",
+    "longsleeve": "Tops",
+    "pants": "Bottoms",
+    "shorts": "Bottoms",
+    "skirt": "Bottoms",
+    "outwear": "Outerwear",
+    "dress": "Dresses",
+    "shoes": "Footwear",
+    "hat": "Accessories"
+  },
+
+  "mapping_notes": {
+    "Tops": "3 source classes merged (t-shirt, shirt, longsleeve) — likely the best-represented VISTIQ category.",
+    "Bottoms": "3 source classes merged (pants, shorts, skirt).",
+    "Outerwear": "Only 'outwear' maps here — a single source class, likely one of the smaller ones. Check its actual image count during dataset inspection before trusting the model's Outerwear predictions.",
+    "Dresses": "Only 'dress' maps here — a direct 1:1 mapping.",
+    "Footwear": "Only 'shoes' maps here — a direct 1:1 mapping. Note this dataset does not distinguish sneakers/sandals/boots.",
+    "Accessories": "Only 'hat' maps here — a single, narrow source class. The trained model's notion of 'Accessories' will effectively only mean 'hat-like' images; it will not recognize bags, jewelry, belts, etc. This is a real, documented limitation of this dataset choice, not something to paper over.",
+    "unmapped_dataset_labels": "None — every one of the 10 source folders maps to exactly one VISTIQ category, so no images need to be dropped for label reasons."
+  },
+
+  "color_palette": {
+    "note": "Used by ml/inference/color.py for deterministic (non-ML) dominant-color bucketing — not related to the category classifier.",
+    "buckets": {
+      "Black": [24, 24, 27],
+      "White": [244, 244, 245],
+      "Grey": [156, 163, 175],
+      "Navy": [36, 59, 85],
+      "Indigo": [60, 74, 117],
+      "Beige": [217, 205, 184],
+      "Brown": [107, 74, 52],
+      "Green": [63, 108, 79],
+      "Blue": [59, 108, 191],
+      "Red": [178, 42, 42],
+      "Yellow": [214, 184, 60],
+      "Pink": [214, 145, 168],
+      "Purple": [110, 72, 145],
+      "Orange": [201, 111, 53]
+    }
+  }
+}

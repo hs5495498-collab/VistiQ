@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 560" role="img" aria-label="">
+  <defs>
+    <linearGradient id="heroBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3ede1"/>
+      <stop offset="100%" stop-color="#e7ddc9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="480" height="560" rx="0" fill="url(#heroBg)"/>
+
+  <!-- ambient shadow -->
+  <ellipse cx="240" cy="472" rx="150" ry="20" fill="#27272a" opacity="0.08"/>
+
+  <!-- hanger -->
+  <circle cx="240" cy="66" r="8" fill="none" stroke="#27272a" stroke-width="5"/>
+  <path d="M170,116 L240,72 L310,116" fill="none" stroke="#27272a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- blazer body -->
+  <path d="M170,118
+           L212,124
+           L240,178
+           L268,124
+           L310,118
+           L332,150
+           L320,320
+           L336,452
+           L144,452
+           L160,320
+           L148,150
+           Z"
+        fill="#2c2c30"/>
+
+  <!-- lapel shading -->
+  <path d="M212,124 L240,178 L224,130 Z" fill="#3d3d42"/>
+  <path d="M268,124 L240,178 L256,130 Z" fill="#3d3d42"/>
+
+  <!-- sleeves -->
+  <path d="M148,150 L112,162 L100,360 L128,378 L152,270 Z" fill="#242427"/>
+  <path d="M332,150 L368,162 L380,360 L352,378 L328,270 Z" fill="#242427"/>
+
+  <!-- buttons -->
+  <circle cx="240" cy="270" r="4" fill="#e7ddc9" opacity="0.6"/>
+  <circle cx="240" cy="300" r="4" fill="#e7ddc9" opacity="0.6"/>
+
+  <!-- folded knit accent, lower right -->
+  <rect x="288" y="392" width="120" height="66" rx="10" fill="#cdbfa5"/>
+  <line x1="300" y1="412" x2="396" y2="412" stroke="#b8a687" stroke-width="2"/>
+  <line x1="300" y1="428" x2="396" y2="428" stroke="#b8a687" stroke-width="2"/>
+  <line x1="300" y1="444" x2="380" y2="444" stroke="#b8a687" stroke-width="2"/>
+
+  <!-- quiet-luxury accent stitch -->
+  <path d="M150,452 L330,452" stroke="#b08d57" stroke-width="1.5" opacity="0.55" stroke-dasharray="2 6" stroke-linecap="round"/>
+</svg>

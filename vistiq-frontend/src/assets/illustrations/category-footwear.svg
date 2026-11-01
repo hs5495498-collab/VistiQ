@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" role="img" aria-label="">
+  <defs>
+    <linearGradient id="shoeBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3ede1"/>
+      <stop offset="100%" stop-color="#e7ddc9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="320" height="360" fill="url(#shoeBg)"/>
+
+  <!-- pedestal -->
+  <ellipse cx="160" cy="248" rx="112" ry="16" fill="#cdbfa5"/>
+  <ellipse cx="160" cy="244" rx="112" ry="14" fill="#dcd0b8"/>
+
+  <!-- loafer silhouette -->
+  <path d="M64,214
+           C64,190 90,172 126,166
+           C158,161 190,155 216,148
+           C240,143 262,150 268,172
+           C272,188 266,206 250,214
+           L250,222
+           C220,234 100,234 68,222
+           Z"
+        fill="#2c2c30"/>
+
+  <!-- sole -->
+  <path d="M66,216 L252,206 L256,224 L70,232 Z" fill="#1c1c1f"/>
+
+  <!-- vamp strap detail -->
+  <rect x="150" y="172" width="40" height="9" rx="4.5" fill="#e7ddc9" opacity="0.35"/>
+</svg>

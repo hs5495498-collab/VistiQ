@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated files
+*.log
+
+# Local runtime data (uploaded photos + SQLite db from manual testing)
+vistiq-backend/data/uploads/
+vistiq-backend/data/*.db

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" role="img" aria-label="">
+  <defs>
+    <linearGradient id="bottomsBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3ede1"/>
+      <stop offset="100%" stop-color="#e7ddc9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="320" height="360" fill="url(#bottomsBg)"/>
+
+  <ellipse cx="160" cy="300" rx="96" ry="14" fill="#27272a" opacity="0.08"/>
+
+  <!-- waistband -->
+  <rect x="92" y="82" width="136" height="20" rx="7" fill="#3d3d42"/>
+
+  <!-- right leg (drawn first, sits slightly behind) -->
+  <path d="M166,100 L224,100 L216,266 L182,266 L174,150 Z" fill="#242427"/>
+  <line x1="200" y1="116" x2="196" y2="260" stroke="#151517" stroke-width="2" opacity="0.5"/>
+  <rect x="180" y="256" width="38" height="14" rx="3" fill="#1c1c1f"/>
+
+  <!-- left leg -->
+  <path d="M96,100 L154,100 L146,150 L138,266 L104,266 Z" fill="#2c2c30"/>
+  <line x1="120" y1="116" x2="124" y2="260" stroke="#1c1c1f" stroke-width="2" opacity="0.5"/>
+  <rect x="102" y="256" width="38" height="14" rx="3" fill="#242427"/>
+</svg>

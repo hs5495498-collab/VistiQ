@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 360" role="img" aria-label="">
+  <defs>
+    <linearGradient id="topsBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f3ede1"/>
+      <stop offset="100%" stop-color="#e7ddc9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="320" height="360" fill="url(#topsBg)"/>
+
+  <ellipse cx="160" cy="300" rx="96" ry="14" fill="#27272a" opacity="0.08"/>
+
+  <!-- hanger -->
+  <circle cx="160" cy="54" r="6" fill="none" stroke="#27272a" stroke-width="4"/>
+  <path d="M118,90 L160,58 L202,90" fill="none" stroke="#27272a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- t-shirt silhouette -->
+  <path d="M118,92
+           L150,74
+           L160,86
+           L170,74
+           L202,92
+           L226,114
+           L208,140
+           L188,128
+           L188,262
+           L132,262
+           L132,128
+           L112,140
+           L94,114
+           Z"
+        fill="#2c2c30"/>
+
+  <!-- collar shading -->
+  <path d="M150,74 L160,86 L170,74 L160,98 Z" fill="#3d3d42"/>
+</svg>

@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+@import "tailwindcss";
+
+/*
+  VISTIQ design system — "Atelier Minimalist Fashion".
+  Tokens sourced from Stitch/Home/DESIGN.md, expressed as Tailwind v4
+  @theme variables so utilities like bg-primary, text-secondary,
+  border-border, shadow-sm, rounded-lg etc. resolve to the VISTIQ palette.
+*/
+@theme {
+  /* Colors */
+  --color-primary: #27272a;
+  --color-on-primary: #ffffff;
+  --color-secondary: #71717a;
+  --color-border: #e4e4e7;
+  --color-canvas: #f4f4f6;
+  --color-surface: #ffffff;
+
+  /* Typography */
+  --font-heading: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+
+  --text-hero: 3.5rem;
+  --text-hero--line-height: 1.14;
+  --text-hero--letter-spacing: -0.03em;
+  --text-hero--font-weight: 600;
+
+  --text-hero-sm: 2.25rem;
+  --text-hero-sm--line-height: 1.22;
+  --text-hero-sm--letter-spacing: -0.02em;
+  --text-hero-sm--font-weight: 600;
+
+  --text-h1: 2rem;
+  --text-h1--line-height: 1.25;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h1--font-weight: 600;
+
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.33;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h2--font-weight: 500;
+
+  --text-h3: 1.25rem;
+  --text-h3--line-height: 1.4;
+  --text-h3--letter-spacing: -0.01em;
+  --text-h3--font-weight: 500;
+
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.56;
+
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.6;
+
+  --text-body-sm: 0.8125rem;
+  --text-body-sm--line-height: 1.4;
+
+  --text-label: 0.9375rem;
+  --text-label--line-height: 1.3;
+  --text-label--letter-spacing: -0.005em;
+  --text-label--font-weight: 500;
+
+  --text-label-sm: 0.6875rem;
+  --text-label-sm--line-height: 1.3;
+  --text-label-sm--letter-spacing: 0.01em;
+  --text-label-sm--font-weight: 500;
+
+  /* Radius */
+  --radius-sm: 0.5rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-2xl: 3rem;
+
+  /* Ambient elevation (soft, no harsh drop shadows) */
+  --shadow-sm: 0 2px 8px -2px rgba(39, 39, 42, 0.04), 0 8px 24px -4px rgba(39, 39, 42, 0.06);
+  --shadow-md: 0 12px 32px -6px rgba(39, 39, 42, 0.08), 0 4px 12px -2px rgba(39, 39, 42, 0.04);
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    color: var(--color-primary);
+  }
+}
