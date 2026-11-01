@@ -2,13 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.database.connection import init_db
+from app.routes.auth import router as auth_router
 from app.routes.clothing_analysis import router as clothing_analysis_router
 from app.routes.recommendation import router as recommendation_router
 from app.routes.wardrobe import router as wardrobe_router
-from app.services.image_storage import UPLOADS_DIR, UPLOADS_URL_PREFIX
 
 
 @asynccontextmanager
@@ -50,11 +49,13 @@ def health_check():
     return {"status": "healthy"}
 
 
+app.include_router(auth_router)
 app.include_router(wardrobe_router)
 app.include_router(recommendation_router)
 app.include_router(clothing_analysis_router)
 
-# Serves uploaded wardrobe photos (app/services/image_storage.py). The
-# directory is created at import time in image_storage.py, so it always
-# exists by the time StaticFiles checks for it here.
-app.mount(UPLOADS_URL_PREFIX, StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+# Phase 4: uploaded wardrobe photos are served through an authenticated,
+# ownership-checked route (app/routes/wardrobe.py:get_wardrobe_image()),
+# registered above as part of wardrobe_router — NOT a public StaticFiles
+# mount. A blanket mount would let anyone who guesses/intercepts a
+# filename view another user's private photo; see that route's docstring.

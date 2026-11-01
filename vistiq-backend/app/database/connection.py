@@ -58,6 +58,14 @@ def _add_missing_columns() -> None:
             connection.execute(
                 text("ALTER TABLE clothing_items ADD COLUMN color_reliability VARCHAR")
             )
+    if "user_id" not in existing_columns:
+        # Phase 4: nullable, no default — every pre-existing row ends up
+        # with user_id=NULL (never deleted, never reassigned to a real
+        # account automatically). See app/database/models.py's
+        # ClothingItem.user_id docstring for why this is the deliberate,
+        # approved choice rather than a one-time migration account.
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE clothing_items ADD COLUMN user_id INTEGER"))
 
 
 def get_db() -> Session:

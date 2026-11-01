@@ -247,14 +247,27 @@ def _context(request: RecommendationRequest) -> dict:
     }
 
 
-def build_recommendations(db: Session, request: RecommendationRequest) -> dict:
-    """Run the full pipeline and return a dict matching RecommendationResponse."""
+def build_recommendations(db: Session, request: RecommendationRequest, user_id: int) -> dict:
+    """Run the full pipeline and return a dict matching RecommendationResponse.
+
+    Phase 4: `user_id` is the AUTHENTICATED caller's id (never a value
+    taken from the request body) — both the anchor lookup and the
+    candidate-pool query below are filtered by it, so a wardrobe_item_id
+    or selected_item_id belonging to a different user behaves exactly
+    like an id that doesn't exist at all (404 / "not found" message,
+    never a different error that would confirm the item exists for
+    someone else).
+    """
 
     selected_item: ClothingItem | None = None
     candidate_ids = set(request.wardrobe_item_ids)
 
     if request.selected_item_id is not None:
-        selected_item = db.get(ClothingItem, request.selected_item_id)
+        selected_item = (
+            db.query(ClothingItem)
+            .filter(ClothingItem.id == request.selected_item_id, ClothingItem.user_id == user_id)
+            .first()
+        )
         if selected_item is None:
             raise HTTPException(
                 status_code=404,
@@ -269,7 +282,11 @@ def build_recommendations(db: Session, request: RecommendationRequest) -> dict:
             "message": "Your selected wardrobe pool is empty, so no outfit recommendations could be generated.",
         }
 
-    candidates = db.query(ClothingItem).filter(ClothingItem.id.in_(candidate_ids)).all()
+    candidates = (
+        db.query(ClothingItem)
+        .filter(ClothingItem.id.in_(candidate_ids), ClothingItem.user_id == user_id)
+        .all()
+    )
     if not candidates:
         return {
             "request": _context(request),

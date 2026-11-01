@@ -22,3 +22,8 @@ torchvision==0.29.0+cpu
 # (ml/inference/color_advanced.py). Headless variant: no GUI/Qt bindings,
 # smaller install, correct choice for a server-side backend with no display.
 opencv-python-headless==5.0.0.93
+
+# Phase 4 — Argon2id password hashing (app/security/passwords.py). The
+# maintained, standard Python binding for the Argon2 reference
+# implementation — never roll your own password hashing.
+argon2-cffi==25.1.0

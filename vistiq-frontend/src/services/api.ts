@@ -20,12 +20,32 @@ export class ApiError extends Error {
   }
 }
 
+/** Phase 4: cookie-based session auth. The session cookie itself is
+ * HttpOnly (JS can never read it — that's the point), so the browser
+ * attaches it to every request automatically as long as `credentials:
+ * "include"` is set (every fetch below does this). The separate CSRF
+ * cookie is deliberately NOT HttpOnly — the whole double-submit scheme
+ * depends on the frontend being able to read it here and echo it back as
+ * a header; a cross-site attacker page cannot read it due to the
+ * same-origin policy, which is what makes this work as CSRF protection.
+ * Neither cookie is ever stored in localStorage/sessionStorage. */
+function readCsrfCookie(): string | null {
+  const match = document.cookie.match(/(?:^|;\s*)vistiq_csrf=([^;]+)/)
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+function withCsrfHeader(headers: HeadersInit = {}): HeadersInit {
+  const csrfToken = readCsrfCookie()
+  return csrfToken ? { ...headers, 'X-CSRF-Token': csrfToken } : headers
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      credentials: 'include',
+      headers: withCsrfHeader({ 'Content-Type': 'application/json', ...init?.headers }),
     })
   } catch {
     throw new ApiError('VISTIQ backend is unavailable. Start the FastAPI server and try again.', 0)
@@ -67,7 +87,12 @@ async function multipartFetch<T>(path: string, file: File): Promise<T> {
 
   let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, { method: 'POST', body: formData })
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+      headers: withCsrfHeader(),
+    })
   } catch {
     throw new ApiError('VISTIQ backend is unavailable. Start the FastAPI server and try again.', 0)
   }
@@ -367,4 +392,66 @@ export async function analyzeClothingImage(file: File): Promise<ClothingAnalysis
 export async function uploadClothingImage(file: File): Promise<string> {
   const raw = await multipartFetch<{ image: string }>('/wardrobe/images', file)
   return raw.image
+}
+
+// ---------------------------------------------------------------------------
+// Authentication (backend: app/routes/auth.py) — Phase 4
+// ---------------------------------------------------------------------------
+
+export interface AuthUser {
+  id: number
+  name: string
+  email: string
+  createdAt: string
+}
+
+interface ApiUserPublic {
+  id: number
+  name: string
+  email: string
+  created_at: string
+}
+
+function mapApiUser(raw: ApiUserPublic): AuthUser {
+  return { id: raw.id, name: raw.name, email: raw.email, createdAt: raw.created_at }
+}
+
+export async function registerUser(input: {
+  name: string
+  email: string
+  password: string
+  passwordConfirmation: string
+}): Promise<AuthUser> {
+  const raw = await apiFetch<ApiUserPublic>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({
+      name: input.name,
+      email: input.email,
+      password: input.password,
+      password_confirmation: input.passwordConfirmation,
+    }),
+  })
+  return mapApiUser(raw)
+}
+
+export async function loginUser(input: { email: string; password: string }): Promise<AuthUser> {
+  const raw = await apiFetch<ApiUserPublic>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: input.email, password: input.password }),
+  })
+  return mapApiUser(raw)
+}
+
+export async function logoutUser(): Promise<void> {
+  await apiFetch<{ message: string }>('/auth/logout', { method: 'POST' })
+}
+
+/** Used for session restoration on page refresh — the frontend never
+ * stores "am I logged in" itself, it asks the backend, since the only
+ * real source of truth is the (HttpOnly, JS-invisible) session cookie.
+ * Throws ApiError(401) when there's no valid session — callers should
+ * treat that as "not logged in," not as an unexpected failure. */
+export async function getCurrentUser(): Promise<AuthUser> {
+  const raw = await apiFetch<ApiUserPublic>('/auth/me')
+  return mapApiUser(raw)
 }
