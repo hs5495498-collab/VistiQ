@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Home, Shirt, PlusSquare, Sparkles, Wand2, Menu, X } from 'lucide-react'
+import { Home, LogIn, LogOut, Menu, PlusSquare, Shirt, Sparkles, UserPlus, Wand2, X } from 'lucide-react'
+import { useAuth } from '../hooks/useAuth'
 
 const NAV_LINKS = [
   { to: '/', label: 'Home', icon: Home, end: true },
@@ -21,6 +22,7 @@ function linkClasses(isActive: boolean) {
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
+  const { user, logout } = useAuth()
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-surface/80 backdrop-blur-xl">
@@ -41,6 +43,33 @@ export default function Navbar() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="hidden items-center gap-2 md:flex">
+          {user ? (
+            <>
+              <span className="font-label text-label-sm text-secondary">{user.name}</span>
+              <button
+                type="button"
+                onClick={logout}
+                className="flex items-center gap-1.5 rounded-full px-4 py-2 font-body text-body-sm text-secondary transition-colors hover:bg-canvas hover:text-primary"
+              >
+                <LogOut size={16} strokeWidth={2} aria-hidden="true" />
+                Log Out
+              </button>
+            </>
+          ) : (
+            <>
+              <NavLink to="/login" className={({ isActive }) => linkClasses(isActive)}>
+                <LogIn size={16} strokeWidth={2} aria-hidden="true" />
+                Log In
+              </NavLink>
+              <NavLink to="/register" className={({ isActive }) => linkClasses(isActive)}>
+                <UserPlus size={16} strokeWidth={2} aria-hidden="true" />
+                Sign Up
+              </NavLink>
+            </>
+          )}
+        </div>
 
         <button
           type="button"
@@ -70,6 +99,33 @@ export default function Navbar() {
               <span>{label}</span>
             </NavLink>
           ))}
+
+          <div className="mt-1 border-t border-border pt-2">
+            {user ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false)
+                  logout()
+                }}
+                className="flex w-full items-center gap-2 rounded-full px-4 py-2 font-body text-body-sm text-secondary transition-colors hover:bg-canvas hover:text-primary"
+              >
+                <LogOut size={16} strokeWidth={2} aria-hidden="true" />
+                Log Out ({user.name})
+              </button>
+            ) : (
+              <>
+                <NavLink to="/login" onClick={() => setIsOpen(false)} className={({ isActive }) => linkClasses(isActive)}>
+                  <LogIn size={16} strokeWidth={2} aria-hidden="true" />
+                  Log In
+                </NavLink>
+                <NavLink to="/register" onClick={() => setIsOpen(false)} className={({ isActive }) => linkClasses(isActive)}>
+                  <UserPlus size={16} strokeWidth={2} aria-hidden="true" />
+                  Sign Up
+                </NavLink>
+              </>
+            )}
+          </div>
         </nav>
       )}
     </header>

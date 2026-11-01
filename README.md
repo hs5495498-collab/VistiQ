@@ -51,30 +51,41 @@ Frontend
 ## 5. Frontend
 
 - **Stack:** React 19 + TypeScript + Vite + Tailwind CSS, `react-router-dom` for routing.
-- **Pages:** Home (`/`), My Wardrobe (`/wardrobe`), Add Item (`/add-item`), AI Stylist (`/stylist`), Recommendations (`/recommendations`).
+- **Pages:** Home (`/`, public), Login (`/login`, public), Register (`/register`, public), My Wardrobe (`/wardrobe`), Add Item (`/add-item`), AI Stylist (`/stylist`), Recommendations (`/recommendations`) — the last four require a logged-in session (`src/components/ProtectedRoute.tsx`), which is restored automatically on page refresh via `GET /auth/me` (`src/context/AuthContext.tsx`).
 - **Design source:** Stitch reference designs under `Stitch/` (read-only reference — never modified by the app code).
-- All backend communication goes through a single client module, `src/services/api.ts`, which translates between the app's camelCase types and the backend's snake_case wire format.
+- All backend communication goes through a single client module, `src/services/api.ts`, which translates between the app's camelCase types and the backend's snake_case wire format, sends cookies on every request (`credentials: "include"`), and attaches the CSRF header on state-changing requests.
 
 ## 6. Backend
 
 - **Stack:** FastAPI + Uvicorn, Python 3.12.
 - **Routes:**
   - `GET /`, `GET /health` — service status
-  - `GET /wardrobe`, `POST /wardrobe`, `GET /wardrobe/{id}`, `PUT /wardrobe/{id}`, `DELETE /wardrobe/{id}` — wardrobe CRUD
-  - `POST /wardrobe/images` — uploads a photo to local disk storage, returns its servable URL (see §7)
-  - `POST /recommend` — outfit recommendation
-  - `POST /analyze-clothing` — ML clothing image analysis (see §9)
-- `GET /uploads/<filename>` — serves stored wardrobe photos (`StaticFiles` mount, backed by `vistiq-backend/data/uploads/`).
-- CORS is restricted to the local Vite dev origins (`http://localhost:5173`, `http://127.0.0.1:5173`).
+  - `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` — authentication (see §7)
+  - `GET /wardrobe`, `POST /wardrobe`, `GET /wardrobe/{id}`, `PUT /wardrobe/{id}`, `DELETE /wardrobe/{id}` — wardrobe CRUD, scoped to the authenticated user
+  - `POST /wardrobe/images` — uploads a photo to local disk storage, returns its servable URL (see §8)
+  - `GET /wardrobe/images/{filename}` — serves a stored photo, only to the user who owns the item it's attached to (see §8)
+  - `POST /recommend` — outfit recommendation, from the authenticated user's wardrobe only
+  - `POST /analyze-clothing` — ML clothing image analysis (see §10)
+- Every route above except `/`, `/health`, `/auth/register`, and `/auth/login` requires a valid session; every state-changing route (`POST`/`PUT`/`DELETE`) additionally requires the CSRF header described in §7.
+- CORS is restricted to the local Vite dev origins (`http://localhost:5173`, `http://127.0.0.1:5173`), with `allow_credentials=True` (required for the session cookie to work cross-port in local dev).
 
-## 7. Database & image storage
+## 7. Authentication
+
+- **Password storage:** Argon2id (`argon2-cffi`), via `app/security/passwords.py` — never plaintext, never a reversible encryption, never a hand-rolled hash. A fresh random salt per password is generated automatically by the library.
+- **Sessions:** an opaque, cryptographically random token (`secrets.token_urlsafe`), stored in an `HttpOnly` cookie. Only a SHA-256 hash of the token is ever written to the database (`app/security/sessions.py`) — a stolen database can't be turned back into a valid session. A brand-new session is created on every login (rotation — the standard defense against session fixation), and sessions expire after 7 days.
+- **Cookies:** `HttpOnly` always; `SameSite=Lax`; `Secure` is controlled by the `VISTIQ_COOKIE_SECURE` environment variable (see `vistiq-backend/.env.example`) — `false` for local HTTP dev (a `Secure` cookie is silently dropped over plain HTTP), set to `true` in any real HTTPS deployment.
+- **CSRF:** a double-submit cookie — a second, non-`HttpOnly` `vistiq_csrf` cookie, which the frontend reads and echoes back as an `X-CSRF-Token` header on every state-changing request (`vistiq-frontend/src/services/api.ts`). Checked server-side (`app/security/dependencies.py:require_csrf`) on every `POST`/`PUT`/`DELETE` route except `/auth/register` and `/auth/login`, which have no prior session to protect.
+- **Ownership:** every wardrobe/recommendation query is filtered by the authenticated user's id (never a user id supplied in the request body). A cross-user access attempt and a genuinely nonexistent id both return a plain 404 — the API never confirms that a private item exists for someone else.
+- **Known limitation:** no scheduled cleanup job for expired sessions (they're deleted lazily, on the next access attempt that finds them expired) — acceptable at this project's scale.
+
+## 8. Database & image storage
 
 - SQLite, via SQLAlchemy ORM, file at `vistiq-backend/data/vistiq.db`.
-- Single table `clothing_items`: id, name, category, subcategory, color, secondary_color, style, occasion, season, gender, image, description, wear_count, is_favorite, color_reliability, created_at.
-- Tables are created automatically on backend startup (`init_db()`); no manual migration step is required for this project's scope.
-- **Wardrobe photos** are stored as local files under `vistiq-backend/data/uploads/`, not as base64 blobs in SQLite. Add Item uploads the photo to `POST /wardrobe/images` (`app/services/image_storage.py`), which validates it (same checks as `/analyze-clothing`: JPEG/PNG/WEBP only, 10MB max, must actually decode as an image), saves it under a random server-generated filename — the original filename is never trusted or used — and returns a relative URL (e.g. `/uploads/<uuid>.jpg`). That URL is what's stored in `clothing_items.image` and what `GET /uploads/...` (a `StaticFiles` mount in `app/main.py`) serves back. Files on disk are independent of the running process, so uploaded photos survive both a page refresh and a full backend restart.
+- Tables: `users` (id, name, email, password_hash, created_at), `user_sessions` (id, user_id, token_hash, created_at, expires_at), and `clothing_items`: id, user_id, name, category, subcategory, color, secondary_color, style, occasion, season, gender, image, description, wear_count, is_favorite, color_reliability, created_at.
+- Tables are created automatically on backend startup (`init_db()`); additive column migrations (e.g. `user_id`) are applied by hand via `ALTER TABLE` — no Alembic in this project's scope. **Pre-authentication wardrobe rows have `user_id = NULL`** — preserved on disk, never deleted, but permanently unreachable through the user-scoped API (by design — see `app/database/models.py`'s `ClothingItem.user_id` docstring).
+- **Wardrobe photos** are stored as local files under `vistiq-backend/data/uploads/`, not as base64 blobs in SQLite. Add Item uploads the photo to `POST /wardrobe/images` (`app/services/image_storage.py`), which validates it (same checks as `/analyze-clothing`: JPEG/PNG/WEBP only, 10MB max, must actually decode as an image), saves it under a random server-generated filename — the original filename is never trusted or used — and returns a relative URL (e.g. `/wardrobe/images/<uuid>.jpg`). That URL is what's stored in `clothing_items.image` and what `GET /wardrobe/images/<filename>` (an authenticated, ownership-checked route — **not** a public static file mount) serves back. Files on disk are independent of the running process, so uploaded photos survive both a page refresh and a full backend restart.
 
-## 8. Recommendation engine
+## 9. Recommendation engine
 
 Implemented in `vistiq-backend/app/recommendation/`:
 - `rules.py` — pure, deterministic compatibility functions (category complementarity, style compatibility, occasion matching, weather/season matching), unchanged since Phase 1 and still directly unit-tested on their own.
@@ -86,7 +97,7 @@ Implemented in `vistiq-backend/app/recommendation/`:
 
 The engine is intentionally free of randomness: the same request against the same database state always returns the same result.
 
-## 9. ML component — clothing image analysis
+## 10. ML component — clothing image analysis
 
 **Status: trained and integrated.** The model was trained in Google Colab and the exported checkpoint is loaded and used by the live backend.
 
@@ -102,7 +113,7 @@ The engine is intentionally free of randomness: the same request against the sam
 
 If the checkpoint is ever missing, retrain via the Colab notebook and place the exported file at `models/vistiq_clothing_classifier.pt`.
 
-## 10. How to run the frontend
+## 11. How to run the frontend
 
 ```powershell
 cd vistiq-frontend
@@ -112,7 +123,7 @@ npm run dev
 
 Serves at `http://localhost:5173`.
 
-## 11. How to run the backend
+## 12. How to run the backend
 
 ```powershell
 cd vistiq-backend
@@ -120,28 +131,27 @@ cd vistiq-backend
 python -m uvicorn app.main:app --reload
 ```
 
-Serves at `http://127.0.0.1:8000`. Interactive API docs at `/docs`.
+Serves at `http://127.0.0.1:8000`. Interactive API docs at `/docs`. Copy `.env.example` to `.env` to override `VISTIQ_COOKIE_SECURE` (see §7) — the default (`false`) is already correct for this local setup.
 
-## 12. Testing
+## 13. Testing
 
 The system has been manually integration-tested end-to-end, including with the real trained model: frontend build/lint, backend startup and every route, full wardrobe CRUD cycle, image upload/persistence across page refresh and backend restart, the recommendation engine under varying occasion/style/weather/anchor/top_k parameters (including the empty-state path when a wardrobe pool has no valid category combination), real CPU inference through `/analyze-clothing`, and a real browser walkthrough of Home → Add Item (upload → AI prediction → user review/correction → save) → My Wardrobe (real photo visible) → AI Stylist → Recommendations, including changing occasion and confirming the recommendation actually changes. See the Stage 14, 15, and 16 test reports for full results tables.
 
-**Automated tests:** `vistiq-backend/tests/` — a pytest suite covering the recommendation engine (candidate generation, all six scoring dimensions, anchor restriction, deterministic ranking, empty/insufficient-wardrobe handling), the wardrobe CRUD API, image upload validation, GrabCut segmentation + K-means color extraction + image-quality checks, and ML inference (mocked for speed in ordinary tests, plus one genuine unmocked model-load + real-inference smoke test). Run with `cd vistiq-backend && .venv\Scripts\python.exe -m pytest`. There is still no frontend automated test suite (vitest/jest) — frontend verification remains manual build/lint + browser walkthrough.
+**Automated tests:** `vistiq-backend/tests/` — a pytest suite covering authentication (registration, login/logout, session expiry/invalidation, password hashing), cross-user authorization (every wardrobe/recommendation/image endpoint, confirmed un-reachable by a second user), the recommendation engine (candidate generation, all six scoring dimensions, anchor restriction, deterministic ranking, empty/insufficient-wardrobe handling), the wardrobe CRUD API, image upload validation, GrabCut segmentation + K-means color extraction + image-quality checks, and ML inference (mocked for speed in ordinary tests, plus one genuine unmocked model-load + real-inference smoke test). Run with `cd vistiq-backend && .venv\Scripts\python.exe -m pytest`. There is still no frontend automated test suite (vitest/jest) — frontend verification remains manual build/lint + browser walkthrough.
 
-## 13. Current limitations
+## 14. Current limitations
 
-- Automatic color extraction is improved but still not perfectly foreground-aware — GrabCut segmentation (see §9, `ml/README.md`) assumes a roughly centered garment with background nearer the edges, and can fail on off-center photos or backgrounds close in color to the garment; it is intentionally treated as a suggestion only either way, and the user-confirmed color is what's actually saved and scored. See §9.
-- The AI Stylist UI does not yet expose anchor-item selection (`selected_item_id`), even though the backend recommendation API supports it and it has been verified working directly against the API.
+- Automatic color extraction is improved but still not perfectly foreground-aware — GrabCut segmentation (see §10, `ml/README.md`) assumes a roughly centered garment with background nearer the edges, and can fail on off-center photos or backgrounds close in color to the garment; it is intentionally treated as a suggestion only either way, and the user-confirmed color is what's actually saved and scored. See §10.
 - Backend now has an automated pytest suite (Phase 1); the frontend still has no automated test suite (vitest/jest) — its verification remains manual/scripted integration testing.
-- No authentication — single implicit user, no accounts or multi-user isolation.
-- No deployment configuration — local development only.
+- No deployment configuration — local development only; no production security review has been performed, and VISTIQ should not be treated as production-ready as-is (see §7's cookie/CSRF notes and the no-scheduled-session-cleanup limitation).
 - Uploaded photos are stored locally on disk (`vistiq-backend/data/uploads/`) with no size cap on the directory as a whole and no cleanup of orphaned files if a wardrobe item is later deleted — acceptable for a local PBL prototype, not for production use.
+- Login/register are not behind CSRF protection (standard practice — there's no prior session to protect at that point), which leaves a low-severity "login CSRF" theoretical gap.
 
-## 14. Future scope
+## 15. Future scope
 
-- Color extraction is now segmentation-aware (GrabCut + K-means, see §9) but still not reliable enough to promote from "suggestion" to a trusted default — a learned, garment-aware segmentation model would be the next step if that's ever needed.
-- Expose anchor-item selection in the AI Stylist UI.
+- Color extraction is now segmentation-aware (GrabCut + K-means, see §10) but still not reliable enough to promote from "suggestion" to a trusted default — a learned, garment-aware segmentation model would be the next step if that's ever needed.
 - Add an automated frontend (vitest) test suite (backend pytest suite added in Phase 1).
 - Expand the recommendation engine's color/style rule tables as more real wardrobe data becomes available.
 - Delete the associated uploaded file when a wardrobe item with an image is deleted.
-- User accounts and multi-user wardrobes.
+- A scheduled cleanup job for expired sessions, rather than today's lazy (on-next-access) deletion.
+- A way to reclaim the pre-authentication legacy wardrobe rows (`user_id = NULL`) — currently preserved but permanently unreachable through the API by design (see §8).

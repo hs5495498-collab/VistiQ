@@ -1,11 +1,16 @@
 """Local persistent storage for uploaded wardrobe photos (Stage 16).
 
 Deliberately simple for a PBL prototype: files are saved to a local
-directory and served back via FastAPI's StaticFiles mount (see app/main.py)
-— no cloud storage, no database blobs. Filenames are always generated
-server-side (uuid4 + an extension derived from the validated content-type),
-never taken from the client, so a malicious/odd original filename can never
-reach the filesystem.
+directory — no cloud storage, no database blobs. Filenames are always
+generated server-side (uuid4 + an extension derived from the validated
+content-type), never taken from the client, so a malicious/odd original
+filename can never reach the filesystem.
+
+Phase 4: files are served back through an authenticated, ownership-checked
+route (app/routes/wardrobe.py:get_wardrobe_image()), NOT a public
+StaticFiles mount — a plain blanket mount would let anyone who guesses or
+intercepts a filename view another user's private wardrobe photo. See that
+route's docstring for the ownership check itself.
 """
 
 import uuid
@@ -20,9 +25,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 UPLOADS_DIR = BASE_DIR / "data" / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Mounted at this path in app/main.py — kept as one constant so the route
-# that returns URLs and the mount that serves them can never drift apart.
-UPLOADS_URL_PREFIX = "/uploads"
+# The URL prefix returned to clients and stored in ClothingItem.image.
+# Routed to app/routes/wardrobe.py:get_wardrobe_image() (ownership-
+# checked) — kept as one constant so the code that builds this URL and
+# the route that serves it can never drift apart. Pre-Phase-4 rows still
+# have the OLD "/uploads/<file>" prefix stored, from back when a public
+# StaticFiles mount served them directly; since those rows are also
+# ownerless post-migration (see ClothingItem.user_id), they're already
+# unreachable through the API regardless — not a new gap this introduces.
+UPLOADS_URL_PREFIX = "/wardrobe/images"
 
 
 def save_clothing_image(raw_bytes: bytes, content_type: str) -> str:

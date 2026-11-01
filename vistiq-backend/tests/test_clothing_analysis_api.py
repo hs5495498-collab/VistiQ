@@ -19,7 +19,7 @@ def _valid_jpeg_bytes(size: tuple[int, int] = (64, 64)) -> bytes:
     return buf.getvalue()
 
 
-def test_analyze_clothing_success(client, monkeypatch):
+def test_analyze_clothing_success(authenticated_client, monkeypatch):
     def fake_predict_clothing(image):
         return {
             "category": "Tops",
@@ -32,7 +32,7 @@ def test_analyze_clothing_success(client, monkeypatch):
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("shirt.jpg", _valid_jpeg_bytes(), "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 200
     body = response.json()
@@ -43,7 +43,7 @@ def test_analyze_clothing_success(client, monkeypatch):
     assert body["color_confidence"] is None
 
 
-def test_analyze_clothing_low_confidence_message(client, monkeypatch):
+def test_analyze_clothing_low_confidence_message(authenticated_client, monkeypatch):
     def fake_predict_clothing(image):
         return {
             "category": "Outerwear",
@@ -56,7 +56,7 @@ def test_analyze_clothing_low_confidence_message(client, monkeypatch):
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("item.jpg", _valid_jpeg_bytes(), "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 200
     body = response.json()
@@ -64,19 +64,19 @@ def test_analyze_clothing_low_confidence_message(client, monkeypatch):
     assert "review" in body["message"].lower()
 
 
-def test_analyze_clothing_model_unavailable_returns_503(client, monkeypatch):
+def test_analyze_clothing_model_unavailable_returns_503(authenticated_client, monkeypatch):
     def fake_predict_clothing(image):
         raise clothing_analysis.ModelUnavailableError("no checkpoint")
 
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("item.jpg", _valid_jpeg_bytes(), "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 503
 
 
-def test_analyze_clothing_invalid_image_rejected_before_model_call(client, monkeypatch):
+def test_analyze_clothing_invalid_image_rejected_before_model_call(authenticated_client, monkeypatch):
     """Invalid-image rejection happens in image_validation.py, before the
     (mocked-out) model is ever consulted — assert the mock is never called."""
     calls = []
@@ -88,7 +88,7 @@ def test_analyze_clothing_invalid_image_rejected_before_model_call(client, monke
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("not-an-image.jpg", b"definitely not an image", "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 400
     assert calls == []
@@ -97,7 +97,7 @@ def test_analyze_clothing_invalid_image_rejected_before_model_call(client, monke
 # --- Phase 2: image-quality gate and structured color fields -----------------
 
 
-def test_analyze_clothing_too_small_image_rejected_before_model_call(client, monkeypatch):
+def test_analyze_clothing_too_small_image_rejected_before_model_call(authenticated_client, monkeypatch):
     """Phase 2's hard-reject quality floor (MIN_HARD_DIMENSION) must run
     BEFORE the (mocked-out) model is ever consulted — a genuinely useless
     image shouldn't waste a model forward pass."""
@@ -110,14 +110,14 @@ def test_analyze_clothing_too_small_image_rejected_before_model_call(client, mon
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("tiny.jpg", _valid_jpeg_bytes(size=(16, 16)), "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 400
     assert "too small" in response.json()["detail"].lower()
     assert calls == []
 
 
-def test_analyze_clothing_response_includes_phase2_structured_fields(client, monkeypatch):
+def test_analyze_clothing_response_includes_phase2_structured_fields(authenticated_client, monkeypatch):
     def fake_predict_clothing(image):
         return {
             "category": "Tops",
@@ -136,7 +136,7 @@ def test_analyze_clothing_response_includes_phase2_structured_fields(client, mon
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("shirt.jpg", _valid_jpeg_bytes(), "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 200
     body = response.json()
@@ -155,7 +155,7 @@ def test_analyze_clothing_response_includes_phase2_structured_fields(client, mon
     assert isinstance(body["quality_warnings"], list)
 
 
-def test_analyze_clothing_old_minimal_response_shape_still_works(client, monkeypatch):
+def test_analyze_clothing_old_minimal_response_shape_still_works(authenticated_client, monkeypatch):
     """Backward-compatibility regression test: a mock that returns ONLY the
     original (pre-Phase-2) five keys must still produce a valid response —
     every new field has a default, nothing new is required."""
@@ -172,7 +172,7 @@ def test_analyze_clothing_old_minimal_response_shape_still_works(client, monkeyp
     monkeypatch.setattr(clothing_analysis, "predict_clothing", fake_predict_clothing)
 
     files = {"file": ("shirt.jpg", _valid_jpeg_bytes(), "image/jpeg")}
-    response = client.post("/analyze-clothing", files=files)
+    response = authenticated_client.post("/analyze-clothing", files=files)
 
     assert response.status_code == 200
     body = response.json()
@@ -180,3 +180,9 @@ def test_analyze_clothing_old_minimal_response_shape_still_works(client, monkeyp
     assert body["color"] == "Blue"
     assert body["secondary_color"] is None
     assert body["segmentation_applied"] is False
+
+
+def test_unauthenticated_analyze_clothing_is_rejected(client):
+    files = {"file": ("shirt.jpg", _valid_jpeg_bytes(), "image/jpeg")}
+    response = client.post("/analyze-clothing", files=files)
+    assert response.status_code == 401

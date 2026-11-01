@@ -4,19 +4,19 @@ calls build_recommendations() directly). Focused on backward compatibility
 and the new Phase 3 request/response fields at the HTTP boundary."""
 
 
-def _create_item(client, **overrides):
+def _create_item(authenticated_client, **overrides):
     payload = {"name": "Item", "category": "Tops", "color": "Black", "style": "Casual"}
     payload.update(overrides)
-    return client.post("/wardrobe", json=payload).json()
+    return authenticated_client.post("/wardrobe", json=payload).json()
 
 
-def test_existing_minimal_request_shape_still_works(client):
+def test_existing_minimal_request_shape_still_works(authenticated_client):
     """A request using ONLY the fields that existed before Phase 3 must
     still succeed — none of the new fields are required."""
-    top = _create_item(client, category="Tops", color="Black")
-    bottom = _create_item(client, category="Bottoms", color="White")
+    top = _create_item(authenticated_client, category="Tops", color="Black")
+    bottom = _create_item(authenticated_client, category="Bottoms", color="White")
 
-    response = client.post(
+    response = authenticated_client.post(
         "/recommend",
         json={"occasion": "Casual", "wardrobe_item_ids": [top["id"], bottom["id"]], "top_k": 3},
     )
@@ -25,11 +25,11 @@ def test_existing_minimal_request_shape_still_works(client):
     assert len(body["recommendations"]) >= 1
 
 
-def test_response_includes_phase3_structured_fields_with_safe_defaults(client):
-    top = _create_item(client, category="Tops", color="Black")
-    bottom = _create_item(client, category="Bottoms", color="White")
+def test_response_includes_phase3_structured_fields_with_safe_defaults(authenticated_client):
+    top = _create_item(authenticated_client, category="Tops", color="Black")
+    bottom = _create_item(authenticated_client, category="Bottoms", color="White")
 
-    response = client.post(
+    response = authenticated_client.post(
         "/recommend", json={"occasion": "Casual", "wardrobe_item_ids": [top["id"], bottom["id"]]}
     )
     assert response.status_code == 200
@@ -40,11 +40,11 @@ def test_response_includes_phase3_structured_fields_with_safe_defaults(client):
     assert "reason" in rec  # original field, unchanged
 
 
-def test_new_preference_fields_are_accepted_over_http(client):
-    top = _create_item(client, category="Tops", color="Red")
-    bottom = _create_item(client, category="Bottoms", color="Grey")
+def test_new_preference_fields_are_accepted_over_http(authenticated_client):
+    top = _create_item(authenticated_client, category="Tops", color="Red")
+    bottom = _create_item(authenticated_client, category="Bottoms", color="Grey")
 
-    response = client.post(
+    response = authenticated_client.post(
         "/recommend",
         json={
             "occasion": "Casual",
@@ -59,23 +59,23 @@ def test_new_preference_fields_are_accepted_over_http(client):
     assert len(response.json()["recommendations"]) >= 1
 
 
-def test_malformed_preference_type_returns_422_not_500(client):
+def test_malformed_preference_type_returns_422_not_500(authenticated_client):
     """Pydantic validation (not a crash) for a structurally wrong
     preference value — a string where a list was expected."""
-    top = _create_item(client)
-    response = client.post(
+    top = _create_item(authenticated_client)
+    response = authenticated_client.post(
         "/recommend",
         json={"occasion": "Casual", "wardrobe_item_ids": [top["id"]], "preferred_colors": "Red"},
     )
     assert response.status_code == 422
 
 
-def test_anchor_item_present_in_every_outfit_over_http(client):
-    anchor = _create_item(client, name="Anchor Shoes", category="Footwear", color="Red")
-    top = _create_item(client, category="Tops", color="Grey")
-    bottom = _create_item(client, category="Bottoms", color="Grey")
+def test_anchor_item_present_in_every_outfit_over_http(authenticated_client):
+    anchor = _create_item(authenticated_client, name="Anchor Shoes", category="Footwear", color="Red")
+    top = _create_item(authenticated_client, category="Tops", color="Grey")
+    bottom = _create_item(authenticated_client, category="Bottoms", color="Grey")
 
-    response = client.post(
+    response = authenticated_client.post(
         "/recommend",
         json={
             "occasion": "Casual",
@@ -91,11 +91,11 @@ def test_anchor_item_present_in_every_outfit_over_http(client):
         assert anchor["id"] in {item["id"] for item in rec["items"]}
 
 
-def test_favorite_item_preference_over_http(client):
-    favorite_top = _create_item(client, category="Tops", color="Black", is_favorite=True)
-    bottom = _create_item(client, category="Bottoms", color="White")
+def test_favorite_item_preference_over_http(authenticated_client):
+    favorite_top = _create_item(authenticated_client, category="Tops", color="Black", is_favorite=True)
+    bottom = _create_item(authenticated_client, category="Bottoms", color="White")
 
-    response = client.post(
+    response = authenticated_client.post(
         "/recommend",
         json={
             "occasion": "Casual",
@@ -107,3 +107,33 @@ def test_favorite_item_preference_over_http(client):
     assert response.status_code == 200
     rec = response.json()["recommendations"][0]
     assert any("favorite" in reason.lower() for reason in rec["positive_reasons"])
+
+
+# --- Phase 4: authentication / authorization ----------------------------------
+
+
+def test_unauthenticated_recommend_request_is_rejected(client):
+    response = client.post("/recommend", json={"occasion": "Casual", "wardrobe_item_ids": [1]})
+    assert response.status_code == 401
+
+
+def test_user_b_cannot_generate_recommendations_from_user_a_wardrobe(authenticated_client, second_authenticated_client):
+    top = _create_item(authenticated_client, category="Tops", color="Black")
+    bottom = _create_item(authenticated_client, category="Bottoms", color="White")
+
+    response = second_authenticated_client.post(
+        "/recommend", json={"occasion": "Casual", "wardrobe_item_ids": [top["id"], bottom["id"]]}
+    )
+    assert response.status_code == 200
+    # User B's request names User A's item ids, but none of THEIR items
+    # match (user-scoped query), so no outfit can be built from them.
+    assert response.json()["recommendations"] == []
+
+
+def test_user_b_cannot_use_user_a_item_as_anchor(authenticated_client, second_authenticated_client):
+    anchor = _create_item(authenticated_client, name="User A's Shoes", category="Footwear", color="Red")
+
+    response = second_authenticated_client.post(
+        "/recommend", json={"occasion": "Casual", "wardrobe_item_ids": [], "selected_item_id": anchor["id"]}
+    )
+    assert response.status_code == 404
