@@ -2,8 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import GarmentImage from './GarmentImage'
 import Modal from './Modal'
+import UploadDropzone from './UploadDropzone'
 import { CATEGORY_OPTIONS, COLOR_OPTIONS, LIGHT_COLOR_NAMES, OCCASION_OPTIONS, SEASON_OPTIONS, STYLE_OPTIONS } from '../constants/wardrobeOptions'
-import { ApiError, updateWardrobeItem } from '../services/api'
+import { ApiError, updateWardrobeItem, uploadClothingImage } from '../services/api'
 import type { ClothingItem } from '../types/clothing'
 
 interface EditItemModalProps {
@@ -29,6 +30,9 @@ export default function EditItemModal({ item, onClose, onSaved }: EditItemModalP
   const [occasions, setOccasions] = useState<string[]>(item.occasion ?? [])
   const [season, setSeason] = useState(item.season?.[0] ?? 'All Season')
   const [description, setDescription] = useState(item.description ?? '')
+
+  const [replacingPhoto, setReplacingPhoto] = useState(false)
+  const [newImageFile, setNewImageFile] = useState<File | null>(null)
 
   const [errors, setErrors] = useState<FormErrors>({})
   const [saving, setSaving] = useState(false)
@@ -56,9 +60,13 @@ export default function EditItemModal({ item, onClose, onSaved }: EditItemModalP
     setSubmitError(null)
     setSaving(true)
     try {
-      // `image` is intentionally never included here — the backend only
-      // changes fields actually present in the request body, so leaving it
-      // out preserves the item's existing photo untouched.
+      // Only uploaded (and included below) when the user actually picked a
+      // new photo — otherwise `image` is left out of the update entirely,
+      // so the backend leaves the item's existing photo field untouched.
+      // If this upload or the PUT below fails, nothing has been written to
+      // this item's record yet, so its current photo is never at risk.
+      const newImageUrl = newImageFile ? await uploadClothingImage(newImageFile) : null
+
       const updated = await updateWardrobeItem(item.id, {
         name: name.trim(),
         category,
@@ -67,6 +75,7 @@ export default function EditItemModal({ item, onClose, onSaved }: EditItemModalP
         occasion: occasions.length > 0 ? occasions.join(', ') : null,
         season,
         description: description.trim() ? description.trim() : null,
+        ...(newImageUrl ? { image: newImageUrl } : {}),
       })
       onSaved(updated)
     } catch (err) {
@@ -83,14 +92,39 @@ export default function EditItemModal({ item, onClose, onSaved }: EditItemModalP
   return (
     <Modal title="Edit Item" onClose={saving ? () => {} : onClose} maxWidthClassName="max-w-xl">
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
-        <div className="flex items-center gap-4">
-          <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-canvas">
-            <GarmentImage src={item.image} alt={item.name} category={item.category} className="h-full w-full object-cover" />
+        {replacingPhoto ? (
+          <div className="flex flex-col gap-2">
+            <UploadDropzone file={newImageFile} onFileChange={setNewImageFile} />
+            <button
+              type="button"
+              onClick={() => {
+                setReplacingPhoto(false)
+                setNewImageFile(null)
+              }}
+              disabled={saving}
+              className="self-start font-label text-label-sm text-secondary transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Keep current photo instead
+            </button>
           </div>
-          <p className="font-body text-body-sm text-secondary">
-            Photo can&apos;t be replaced here yet — everything else about this item can be updated below.
-          </p>
-        </div>
+        ) : (
+          <div className="flex items-center gap-4">
+            <div className="h-20 w-16 shrink-0 overflow-hidden rounded-lg bg-canvas">
+              <GarmentImage src={item.image} alt={item.name} category={item.category} className="h-full w-full object-cover" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="font-body text-body-sm text-secondary">Current photo.</p>
+              <button
+                type="button"
+                onClick={() => setReplacingPhoto(true)}
+                disabled={saving}
+                className="self-start rounded-full bg-canvas px-3.5 py-1.5 font-label text-label-sm text-primary transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Change Photo
+              </button>
+            </div>
+          </div>
+        )}
 
         {submitError && (
           <div role="alert" className="flex items-start gap-2.5 rounded-lg bg-red-50 p-3">

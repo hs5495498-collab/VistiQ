@@ -91,11 +91,25 @@ def update_clothing_item(
 
     # Only overwrite fields the client actually included in the request body.
     updates = item_update.model_dump(exclude_unset=True)
+
+    # Image replacement (Stage: Phase 1): if this update is actually
+    # changing the photo, remember the OLD image so it can be deleted only
+    # after the new value is safely committed — never before, so a failed
+    # commit leaves the existing (still-valid) image completely untouched.
+    replacing_image = "image" in updates and updates["image"] != db_item.image
+    old_image = db_item.image if replacing_image else None
+
     for field, value in updates.items():
         setattr(db_item, field, value)
 
     db.commit()
     db.refresh(db_item)
+
+    if replacing_image:
+        # Only reached after a successful commit. Best-effort (never raises)
+        # — see delete_clothing_image()'s own docstring.
+        delete_clothing_image(old_image)
+
     return db_item
 
 

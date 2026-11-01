@@ -1,26 +1,49 @@
 # VISTIQ trained models
 
-## Expected file
+## File
 
 ```
 models/vistiq_clothing_classifier.pt
 ```
 
-A PyTorch `state_dict` for a MobileNetV3-Small fine-tuned on VISTIQ's 6
-wardrobe categories (`Tops`, `Bottoms`, `Outerwear`, `Dresses`, `Footwear`,
+A checkpoint for a MobileNetV3-Small fine-tuned on VISTIQ's 6 wardrobe
+categories (`Tops`, `Bottoms`, `Outerwear`, `Dresses`, `Footwear`,
 `Accessories`). Produced by running
 `ml/notebooks/vistiq_clothing_classifier_colab.ipynb` in Google Colab.
 
+Format: a `dict` wrapping the actual weights under `model_state_dict`,
+alongside export metadata — `categories`, `num_classes`, `image_size`,
+`architecture`, and `test_accuracy`. `ml/training/model.py`'s `load_model()`
+unwraps `model_state_dict` before loading it into the plain MobileNetV3-Small
+architecture (it also accepts a raw `state_dict` with no wrapper, for
+flexibility, but the file actually produced by the Colab notebook is the
+wrapped form).
+
 ## Current status
 
-**Not present.** This directory currently contains no trained model — only
-this README. `ml/inference/predict.py` checks for this file at runtime and
-raises a clear `ModelUnavailableError` if it's missing (see
-`ml/inference/predict.is_model_available()`); the FastAPI `/analyze-clothing`
-endpoint catches that and returns a clean service error rather than crashing
-or fabricating a prediction.
+**Present, and verified in this repository.** File size: 6,234,981 bytes
+(~5.9 MiB) — well within normal git limits, no Git LFS needed.
 
-## How to produce it
+Verification performed (see `vistiq-backend/tests/test_model_smoke.py`,
+which runs this check as part of the automated test suite, not just once
+manually):
+
+- The checkpoint's `model_state_dict` loads into a freshly-built
+  MobileNetV3-Small with `strict=True` — exact key and shape match, no
+  errors.
+- A real CPU forward pass on a real uploaded photo produces a category
+  prediction and confidence score through the actual FastAPI
+  `/analyze-clothing` code path (`app/services/clothing_analysis.py` →
+  `ml/inference/predict.py`).
+
+**Not independently verified:** the embedded `test_accuracy: 0.9086`
+metadata field. This repository does not contain the
+`clothing-dataset-small` test split the number was computed against, nor any
+saved confusion matrix / classification report, so that specific accuracy
+figure is reported as training-time output, not reproduced here. See
+`ml/README.md`'s Status section for how to reproduce it if needed.
+
+## How to reproduce/retrain it
 
 1. Open `ml/notebooks/vistiq_clothing_classifier_colab.ipynb` in Google Colab.
 2. Enable a GPU runtime (Runtime → Change runtime type → GPU). The notebook
@@ -30,13 +53,5 @@ or fabricating a prediction.
 4. The final cell saves `vistiq_clothing_classifier.pt` and offers a direct
    Colab download.
 5. Place the downloaded file at `VistiQ/models/vistiq_clothing_classifier.pt`
-   on your machine (same relative path, no code changes needed).
-
-## Why it isn't committed yet
-
-No GPU-trained model exists yet — training happens in Colab, not on this
-Windows laptop (no NVIDIA GPU). Once a model is trained, evaluated, and
-placed here, its file size will be reported here (MobileNetV3-Small
-state_dicts are typically on the order of a few MB to ~10MB as float32,
-well within a normal git repository's limits — no Git LFS is expected to be
-necessary, but this will be confirmed once a real file exists).
+   on your machine (same relative path, no code changes needed), replacing
+   the existing one.

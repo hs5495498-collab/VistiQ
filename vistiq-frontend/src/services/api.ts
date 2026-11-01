@@ -124,6 +124,7 @@ interface ApiClothingItem {
   description: string | null
   wear_count: number
   created_at: string
+  is_favorite: boolean
 }
 
 export interface ClothingItemCreateInput {
@@ -138,6 +139,7 @@ export interface ClothingItemCreateInput {
   gender?: string | null
   image?: string | null
   description?: string | null
+  isFavorite?: boolean
 }
 
 export type ClothingItemUpdateInput = Partial<ClothingItemCreateInput> & { wearCount?: number }
@@ -158,6 +160,7 @@ function mapApiClothingItem(raw: ApiClothingItem): ClothingItem {
     description: raw.description ?? undefined,
     wearCount: raw.wear_count,
     addedAt: raw.created_at,
+    isFavorite: raw.is_favorite,
   }
 }
 
@@ -174,6 +177,7 @@ function toApiCreatePayload(input: ClothingItemCreateInput) {
     gender: input.gender ?? null,
     image: input.image ?? null,
     description: input.description ?? null,
+    is_favorite: input.isFavorite ?? false,
   }
 }
 
@@ -191,6 +195,7 @@ function toApiUpdatePayload(input: ClothingItemUpdateInput) {
   if (input.image !== undefined) payload.image = input.image
   if (input.description !== undefined) payload.description = input.description
   if (input.wearCount !== undefined) payload.wear_count = input.wearCount
+  if (input.isFavorite !== undefined) payload.is_favorite = input.isFavorite
   return payload
 }
 

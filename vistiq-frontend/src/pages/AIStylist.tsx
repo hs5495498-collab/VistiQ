@@ -9,6 +9,8 @@ import {
   Loader2,
   Martini,
   Package,
+  Pin,
+  PinOff,
   Ruler,
   Shirt,
   Snowflake,
@@ -74,6 +76,7 @@ export default function AIStylist() {
   const [mood, setMood] = useState<string | null>(null)
   const [weather, setWeather] = useState<string | null>(null)
   const [selectedItemIds, setSelectedItemIds] = useState<Set<ClothingItem['id']>>(new Set())
+  const [anchorItemId, setAnchorItemId] = useState<ClothingItem['id'] | null>(null)
   const [poolInitialized, setPoolInitialized] = useState(false)
   const [occasionError, setOccasionError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
@@ -112,6 +115,16 @@ export default function AIStylist() {
       else next.add(id)
       return next
     })
+    // An anchor must always be part of the pool it's anchoring — removing
+    // it from the pool clears the anchor rather than leaving it pointing at
+    // an item that's no longer being considered.
+    setAnchorItemId((current) => (current === id ? null : current))
+  }
+
+  function toggleAnchor(id: ClothingItem['id']) {
+    setAnchorItemId((current) => (current === id ? null : id))
+    // Anchoring an item implies including it in the pool too.
+    setSelectedItemIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
   }
 
   async function handleGenerate() {
@@ -129,6 +142,7 @@ export default function AIStylist() {
         style: mood,
         weather,
         wardrobeItemIds: Array.from(selectedItemIds),
+        selectedItemId: anchorItemId ?? undefined,
       })
       // The /recommend response only echoes id/name/category/color/style per
       // outfit item (no image field) — pass the already-loaded real wardrobe
@@ -371,37 +385,69 @@ export default function AIStylist() {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {wardrobeItems.map((item) => {
                     const active = selectedItemIds.has(item.id)
+                    const isAnchor = anchorItemId === item.id
                     const styleMatch = mood ? item.style === mood : false
                     return (
-                      <button
+                      <div
                         key={item.id}
-                        type="button"
-                        onClick={() => toggleItem(item.id)}
-                        aria-pressed={active}
-                        aria-label={`${active ? 'Remove' : 'Include'} ${item.name} in this recommendation`}
-                        className={`flex items-center gap-2.5 rounded-xl p-2 text-left transition-colors ${
+                        className={`relative flex items-center gap-2.5 rounded-xl p-2 transition-colors ${
                           active ? 'bg-canvas' : 'bg-canvas/40 opacity-50 hover:opacity-80'
-                        }`}
+                        } ${isAnchor ? 'ring-2 ring-primary' : ''}`}
                       >
-                        <span className="block h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface">
-                          <GarmentImage src={item.image} alt={item.name} category={item.category} className="h-full w-full object-cover" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block font-label-sm text-label-sm uppercase text-secondary">
-                            {item.category}
+                        <button
+                          type="button"
+                          onClick={() => toggleItem(item.id)}
+                          aria-pressed={active}
+                          aria-label={`${active ? 'Remove' : 'Include'} ${item.name} in this recommendation`}
+                          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                        >
+                          <span className="block h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-surface">
+                            <GarmentImage src={item.image} alt={item.name} category={item.category} className="h-full w-full object-cover" />
                           </span>
-                          <span className="block truncate font-label text-label-sm font-semibold text-primary">
-                            {item.name}
+                          <span className="min-w-0 flex-1">
+                            <span className="block font-label-sm text-label-sm uppercase text-secondary">
+                              {item.category}
+                            </span>
+                            <span className="block truncate font-label text-label-sm font-semibold text-primary">
+                              {item.name}
+                            </span>
+                            <span className="mt-0.5 flex items-center gap-1 font-label-sm text-label-sm text-secondary">
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-secondary' : 'bg-border'}`}
+                                aria-hidden="true"
+                              />
+                              {isAnchor
+                                ? 'Anchor · always included'
+                                : active
+                                  ? styleMatch
+                                    ? 'Included · style match'
+                                    : 'Included'
+                                  : 'Not included'}
+                            </span>
                           </span>
-                          <span className="mt-0.5 flex items-center gap-1 font-label-sm text-label-sm text-secondary">
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-secondary' : 'bg-border'}`}
-                              aria-hidden="true"
-                            />
-                            {active ? (styleMatch ? 'Included · style match' : 'Included') : 'Not included'}
-                          </span>
-                        </span>
-                      </button>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleAnchor(item.id)}
+                          aria-pressed={isAnchor}
+                          aria-label={
+                            isAnchor
+                              ? `Unpin ${item.name} as the anchor item`
+                              : `Anchor this recommendation around ${item.name}`
+                          }
+                          title={isAnchor ? 'Unpin anchor' : 'Anchor outfit on this item'}
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            isAnchor ? 'bg-primary text-on-primary' : 'text-secondary hover:bg-border hover:text-primary'
+                          }`}
+                        >
+                          {isAnchor ? (
+                            <Pin size={14} strokeWidth={2.5} aria-hidden="true" />
+                          ) : (
+                            <PinOff size={14} strokeWidth={2} aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
                     )
                   })}
                 </div>
@@ -416,6 +462,16 @@ export default function AIStylist() {
                       ? `${matchingCount} of ${wardrobeItems.length} wardrobe items are tagged "${mood}".`
                       : 'Choose a style preference to see how many wardrobe items match it.'}{' '}
                     {selectedItemIds.size} item{selectedItemIds.size === 1 ? '' : 's'} will be sent in this request.
+                    {anchorItemId != null && (
+                      <>
+                        {' '}
+                        Every recommendation will be built around{' '}
+                        <strong className="font-label text-label-sm text-primary">
+                          {wardrobeItems.find((item) => item.id === anchorItemId)?.name ?? 'your anchor item'}
+                        </strong>
+                        .
+                      </>
+                    )}
                   </p>
                 </div>
               </>

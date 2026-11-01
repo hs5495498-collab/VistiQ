@@ -41,6 +41,9 @@ export interface ClothingItem {
   wearCount?: number
   /** ISO date the item was added to the wardrobe — powers "Recently Added" sorting. */
   addedAt?: string
+  /** Persisted server-side (Phase 1) — survives reload, unlike the old
+   * frontend-only local state. */
+  isFavorite?: boolean
 }
 
 /** Response from `POST /analyze-clothing`, mapped from the backend's
