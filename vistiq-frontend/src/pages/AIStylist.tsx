@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
   Briefcase,
+  Check,
   Coffee,
+  Heart,
   Layers,
   Lightbulb,
   Loader2,
@@ -18,8 +20,10 @@ import {
   Sun,
   Umbrella,
   Wind,
+  X,
 } from 'lucide-react'
 import GarmentImage from '../components/GarmentImage'
+import { COLOR_OPTIONS, LIGHT_COLOR_NAMES } from '../constants/wardrobeOptions'
 import { useWardrobe } from '../hooks/useWardrobe'
 import { ApiError, getRecommendation } from '../services/api'
 import type { ClothingItem } from '../types/clothing'
@@ -78,6 +82,13 @@ export default function AIStylist() {
   const [selectedItemIds, setSelectedItemIds] = useState<Set<ClothingItem['id']>>(new Set())
   const [anchorItemId, setAnchorItemId] = useState<ClothingItem['id'] | null>(null)
   const [poolInitialized, setPoolInitialized] = useState(false)
+
+  // Phase 3: optional personalization — request-scoped only, nothing
+  // persisted. All default to "no preference", reproducing exactly the
+  // pre-Phase-3 request when left untouched.
+  const [preferredColors, setPreferredColors] = useState<string[]>([])
+  const [avoidedColors, setAvoidedColors] = useState<string[]>([])
+  const [preferFavorites, setPreferFavorites] = useState(false)
   const [occasionError, setOccasionError] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
@@ -127,6 +138,17 @@ export default function AIStylist() {
     setSelectedItemIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)))
   }
 
+  function togglePreferredColor(colorName: string) {
+    setPreferredColors((prev) => (prev.includes(colorName) ? prev.filter((c) => c !== colorName) : [...prev, colorName]))
+    // A color can't be both preferred and avoided at once.
+    setAvoidedColors((prev) => prev.filter((c) => c !== colorName))
+  }
+
+  function toggleAvoidedColor(colorName: string) {
+    setAvoidedColors((prev) => (prev.includes(colorName) ? prev.filter((c) => c !== colorName) : [...prev, colorName]))
+    setPreferredColors((prev) => prev.filter((c) => c !== colorName))
+  }
+
   async function handleGenerate() {
     if (!occasion) {
       setOccasionError("Select what you're dressing for to continue.")
@@ -143,6 +165,9 @@ export default function AIStylist() {
         weather,
         wardrobeItemIds: Array.from(selectedItemIds),
         selectedItemId: anchorItemId ?? undefined,
+        preferredColors: preferredColors.length > 0 ? preferredColors : undefined,
+        avoidedColors: avoidedColors.length > 0 ? avoidedColors : undefined,
+        preferFavorites: preferFavorites || undefined,
       })
       // The /recommend response only echoes id/name/category/color/style per
       // outfit item (no image field) — pass the already-loaded real wardrobe
@@ -290,6 +315,71 @@ export default function AIStylist() {
                 )
               })}
             </div>
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <legend className="font-label-sm text-label-sm font-semibold uppercase tracking-wider text-secondary">
+                04. Personalize (optional)
+              </legend>
+              <span className="font-label-sm text-label-sm text-secondary">Optional</span>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <p className="font-body text-body-sm text-secondary">
+                Prefer a color — tap again to avoid it instead.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {COLOR_OPTIONS.map(({ name: colorName, swatch }) => {
+                  const preferred = preferredColors.includes(colorName)
+                  const avoided = avoidedColors.includes(colorName)
+                  return (
+                    <button
+                      key={colorName}
+                      type="button"
+                      onClick={() => togglePreferredColor(colorName)}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        toggleAvoidedColor(colorName)
+                      }}
+                      aria-pressed={preferred}
+                      aria-label={`${preferred ? 'Stop preferring' : avoided ? 'Stop avoiding' : 'Prefer'} ${colorName}`}
+                      title={`${colorName} — click to prefer, right-click to avoid`}
+                      style={{ backgroundColor: swatch }}
+                      className={`relative flex h-8 w-8 items-center justify-center rounded-full border border-border transition-transform hover:scale-110 ${
+                        preferred ? 'scale-110 ring-2 ring-primary ring-offset-2' : avoided ? 'scale-110 ring-2 ring-red-500 ring-offset-2' : ''
+                      }`}
+                    >
+                      {preferred && (
+                        <Check size={14} strokeWidth={3} className={LIGHT_COLOR_NAMES.has(colorName) ? 'text-primary' : 'text-white'} aria-hidden="true" />
+                      )}
+                      {avoided && (
+                        <X size={14} strokeWidth={3} className={LIGHT_COLOR_NAMES.has(colorName) ? 'text-primary' : 'text-white'} aria-hidden="true" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              {(preferredColors.length > 0 || avoidedColors.length > 0) && (
+                <p className="font-body text-body-sm text-secondary">
+                  {preferredColors.length > 0 && <>Preferring: {preferredColors.join(', ')}. </>}
+                  {avoidedColors.length > 0 && <>Avoiding: {avoidedColors.join(', ')}.</>}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setPreferFavorites((prev) => !prev)}
+              aria-pressed={preferFavorites}
+              className={`mt-1 flex items-center gap-2 self-start rounded-full px-3.5 py-1.5 font-label text-label-sm transition-colors ${
+                preferFavorites ? 'bg-primary text-on-primary shadow-sm' : 'bg-canvas text-secondary hover:text-primary'
+              }`}
+            >
+              <Heart size={14} strokeWidth={2.5} className={preferFavorites ? 'fill-current' : ''} aria-hidden="true" />
+              Favor my favorite items
+              {preferFavorites && <Check size={14} strokeWidth={3} aria-hidden="true" />}
+            </button>
           </fieldset>
 
           <div className="mt-2 flex flex-col items-center gap-2 pt-1">

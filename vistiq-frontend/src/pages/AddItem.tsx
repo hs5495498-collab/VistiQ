@@ -129,6 +129,14 @@ export default function AddItem() {
       // is used as that canonical value. Occasion, on the other hand, is
       // matched by the recommendation engine as a comma-separated list, so
       // every selected occasion is sent through.
+      // Phase 3: persist the Phase 2 analysis's secondary color / color
+      // reliability — previously computed and shown to the user, but
+      // never actually saved (the wardrobe record only stored `color`).
+      // Only trusted when the user kept the AI-suggested primary color —
+      // if they picked a different color manually, the previously-detected
+      // secondary color no longer necessarily corresponds to it, so it's
+      // safer to leave it unset than to save a stale pairing.
+      const keptAiColor = analysisResult != null && color === analysisResult.color
       const created = await createWardrobeItem({
         name: name.trim(),
         category,
@@ -137,6 +145,8 @@ export default function AddItem() {
         occasion: occasions.length > 0 ? occasions.join(', ') : null,
         season,
         image: imagePath,
+        secondaryColor: keptAiColor ? analysisResult.secondaryColor : null,
+        colorReliability: keptAiColor ? analysisResult.colorReliability : null,
       })
       setCreatedItem(created)
     } catch (err) {

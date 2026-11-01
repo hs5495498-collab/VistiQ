@@ -21,6 +21,10 @@ class ClothingItemBase(BaseModel):
     image: str | None = None
     description: str | None = None
     is_favorite: bool = False
+    # Phase 3 — "high" | "medium" | "low" | None (unknown). Set from a
+    # Phase 2 photo analysis at creation time; never fabricated for an item
+    # that wasn't analyzed. See app/database/models.py's ClothingItem.
+    color_reliability: str | None = None
 
 
 class ClothingItemCreate(ClothingItemBase):
@@ -46,6 +50,7 @@ class ClothingItemUpdate(BaseModel):
     description: str | None = None
     wear_count: int | None = None
     is_favorite: bool | None = None
+    color_reliability: str | None = None
 
 
 class ClothingItemResponse(ClothingItemBase):

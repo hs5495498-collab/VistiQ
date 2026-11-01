@@ -219,3 +219,270 @@ def test_partial_outfit_used_when_no_full_template_available(db_session):
 
     assert len(result["recommendations"]) >= 1
     assert "partial outfit" in result["recommendations"][0]["reason"]
+
+
+def test_missing_optional_accessories_still_produces_a_full_outfit(db_session):
+    """A full Tops+Bottoms+Footwear outfit with no Accessories/Outerwear
+    anywhere in the pool must still be generated — those slots are
+    optional, not required."""
+    top = make_item(db_session, name="Shirt", category="Tops", color="Black", style="Casual")
+    bottom = make_item(db_session, name="Jeans", category="Bottoms", color="Black", style="Casual")
+    shoes = make_item(db_session, name="Shoes", category="Footwear", color="Black", style="Casual")
+
+    request = RecommendationRequest(occasion="Casual", wardrobe_item_ids=[top.id, bottom.id, shoes.id])
+    result = build_recommendations(db_session, request)
+
+    assert len(result["recommendations"]) >= 1
+    outfit_ids = {item["id"] for item in result["recommendations"][0]["items"]}
+    assert outfit_ids == {top.id, bottom.id, shoes.id}
+
+
+# --- Phase 3: anchor item that cannot fit any template -----------------------
+
+
+def test_anchor_item_that_cannot_fit_any_template_returns_clear_message(db_session):
+    """An Accessories-only anchor against an otherwise Accessories-only
+    pool can't satisfy any template's required categories — the message
+    must specifically mention the anchor, not just the generic
+    'not enough variety' text."""
+    anchor = make_item(db_session, name="Watch", category="Accessories", color="Black", style="Formal")
+    other_accessory = make_item(db_session, name="Belt", category="Accessories", color="Brown", style="Formal")
+
+    request = RecommendationRequest(
+        occasion="Casual",
+        wardrobe_item_ids=[other_accessory.id],
+        selected_item_id=anchor.id,
+    )
+    result = build_recommendations(db_session, request)
+
+    assert result["recommendations"] == []
+    assert "anchor item" in result["message"].lower()
+    assert anchor.name in result["message"]
+
+
+# --- Phase 3: color theory actually reaches the ranking ----------------------
+
+
+def test_complementary_color_relationship_outranks_contrasting_one(db_session):
+    """Regression test that app/recommendation/color_theory.py's hue-wheel
+    logic is actually wired into scoring, not just unit-tested in
+    isolation: blue+yellow (complementary) must outrank blue+red
+    (contrasting) when every other dimension is held equal."""
+    complementary_top = make_item(db_session, name="Yellow Top", category="Tops", color="Yellow", style="Casual")
+    contrasting_top = make_item(db_session, name="Red Top", category="Tops", color="Red", style="Casual")
+    blue_bottom = make_item(db_session, name="Blue Bottom", category="Bottoms", color="Blue", style="Casual")
+
+    request = RecommendationRequest(
+        occasion="Casual",
+        wardrobe_item_ids=[complementary_top.id, contrasting_top.id, blue_bottom.id],
+        top_k=10,
+        diversify=False,  # isolate the color-theory effect from diversity reranking
+    )
+    result = build_recommendations(db_session, request)
+
+    scores_by_top_id = {}
+    for rec in result["recommendations"]:
+        for item in rec["items"]:
+            if item["id"] in (complementary_top.id, contrasting_top.id):
+                scores_by_top_id[item["id"]] = rec["score"]
+
+    assert scores_by_top_id[complementary_top.id] > scores_by_top_id[contrasting_top.id]
+
+
+def test_secondary_color_influences_scoring_when_stored(db_session):
+    """Regression test that color_theory's secondary-color blending is
+    actually reachable end-to-end — not just unit-tested on bare
+    ClothingItem objects."""
+    plain_top = make_item(db_session, name="Plain Orange", category="Tops", color="Orange")
+    multicolor_top = make_item(db_session, name="Orange+White", category="Tops", color="Orange", secondary_color="White")
+    navy_bottom = make_item(db_session, name="Navy Bottom", category="Bottoms", color="Navy")
+
+    request = RecommendationRequest(
+        occasion="Casual",
+        wardrobe_item_ids=[plain_top.id, multicolor_top.id, navy_bottom.id],
+        top_k=10,
+        diversify=False,
+    )
+    result = build_recommendations(db_session, request)
+
+    scores_by_top_id = {}
+    for rec in result["recommendations"]:
+        for item in rec["items"]:
+            if item["id"] in (plain_top.id, multicolor_top.id):
+                scores_by_top_id[item["id"]] = rec["score"]
+
+    assert scores_by_top_id[multicolor_top.id] != scores_by_top_id[plain_top.id]
+
+
+def test_low_color_reliability_surfaces_a_caveat(db_session):
+    top = make_item(db_session, name="Top", category="Tops", color="Black", color_reliability="low")
+    bottom = make_item(db_session, name="Bottom", category="Bottoms", color="White")
+
+    request = RecommendationRequest(occasion="Casual", wardrobe_item_ids=[top.id, bottom.id], diversify=False)
+    result = build_recommendations(db_session, request)
+
+    assert len(result["recommendations"]) >= 1
+    caveats = result["recommendations"][0]["caveats"]
+    assert any("reliability" in caveat.lower() for caveat in caveats)
+
+
+# --- Phase 3: personalization reaches ranking end-to-end ---------------------
+
+
+def test_preferred_color_preference_changes_ranking(db_session):
+    preferred_top = make_item(db_session, name="Red Top", category="Tops", color="Red", style="Casual")
+    other_top = make_item(db_session, name="Green Top", category="Tops", color="Green", style="Casual")
+    bottom = make_item(db_session, name="Bottom", category="Bottoms", color="Grey", style="Casual")
+
+    without_pref = build_recommendations(
+        db_session,
+        RecommendationRequest(
+            occasion="Casual", wardrobe_item_ids=[preferred_top.id, other_top.id, bottom.id], top_k=10
+        ),
+    )
+    with_pref = build_recommendations(
+        db_session,
+        RecommendationRequest(
+            occasion="Casual",
+            wardrobe_item_ids=[preferred_top.id, other_top.id, bottom.id],
+            top_k=10,
+            preferred_colors=["Red"],
+        ),
+    )
+
+    def score_for(result, item_id):
+        for rec in result["recommendations"]:
+            if any(item["id"] == item_id for item in rec["items"]):
+                return rec["score"]
+        return None
+
+    base_score = score_for(without_pref, preferred_top.id)
+    boosted_score = score_for(with_pref, preferred_top.id)
+    assert boosted_score > base_score
+
+
+def test_favorite_preference_is_reflected_in_positive_reasons(db_session):
+    favorite_top = make_item(db_session, name="Fav Top", category="Tops", color="Black", is_favorite=True)
+    bottom = make_item(db_session, name="Bottom", category="Bottoms", color="White")
+
+    request = RecommendationRequest(
+        occasion="Casual", wardrobe_item_ids=[favorite_top.id, bottom.id], prefer_favorites=True, diversify=False,
+    )
+    result = build_recommendations(db_session, request)
+
+    assert any(
+        "favorite" in reason.lower() for reason in result["recommendations"][0]["positive_reasons"]
+    )
+
+
+def test_invalid_preference_value_does_not_crash_the_api(db_session):
+    top = make_item(db_session, category="Tops", color="Black")
+    bottom = make_item(db_session, category="Bottoms", color="White")
+
+    request = RecommendationRequest(
+        occasion="Casual",
+        wardrobe_item_ids=[top.id, bottom.id],
+        preferred_colors=["not-a-real-color", ""],
+        avoided_colors=["also-not-real"],
+    )
+    result = build_recommendations(db_session, request)  # must not raise
+    assert len(result["recommendations"]) >= 1
+
+
+# --- Phase 3: diversity reduces repetition end-to-end -------------------------
+
+
+def test_diversity_reduces_repetition_versus_non_diverse_baseline(db_session):
+    """A wardrobe deliberately shaped like the real Phase 1/2 baseline
+    finding (many near-duplicate outfits available) — diversify=True must
+    produce lower average pairwise item-overlap than diversify=False,
+    without dropping the single best outfit."""
+    tops = [make_item(db_session, name=f"Top {i}", category="Tops", color="Black", style="Formal") for i in range(4)]
+    bottoms = [make_item(db_session, name=f"Bottom {i}", category="Bottoms", color="Black", style="Formal") for i in range(4)]
+    shoes = make_item(db_session, name="Shoes", category="Footwear", color="Black", style="Formal")
+
+    pool_ids = [i.id for i in tops + bottoms] + [shoes.id]
+
+    diverse = build_recommendations(
+        db_session, RecommendationRequest(occasion="Office", wardrobe_item_ids=pool_ids, top_k=5, diversify=True)
+    )
+    non_diverse = build_recommendations(
+        db_session, RecommendationRequest(occasion="Office", wardrobe_item_ids=pool_ids, top_k=5, diversify=False)
+    )
+
+    def avg_pairwise_overlap(result):
+        outfits = [frozenset(item["id"] for item in rec["items"]) for rec in result["recommendations"]]
+        overlaps = []
+        for i in range(len(outfits)):
+            for j in range(i + 1, len(outfits)):
+                union = outfits[i] | outfits[j]
+                overlaps.append(len(outfits[i] & outfits[j]) / len(union) if union else 0)
+        return sum(overlaps) / len(overlaps) if overlaps else 0
+
+    assert avg_pairwise_overlap(diverse) <= avg_pairwise_overlap(non_diverse)
+    # Top-ranked outfit must be identical either way — diversity never
+    # changes the single best recommendation.
+    assert diverse["recommendations"][0]["items"] == non_diverse["recommendations"][0]["items"]
+
+
+def test_diversity_never_drops_the_anchor_item(db_session):
+    anchor = make_item(db_session, name="Anchor Shoes", category="Footwear", color="Red", style="Streetwear")
+    tops = [make_item(db_session, name=f"Top {i}", category="Tops", color="Grey", style="Streetwear") for i in range(4)]
+    bottoms = [make_item(db_session, name=f"Bottom {i}", category="Bottoms", color="Grey", style="Streetwear") for i in range(4)]
+
+    pool_ids = [i.id for i in tops + bottoms]
+    request = RecommendationRequest(
+        occasion="Casual", wardrobe_item_ids=pool_ids, selected_item_id=anchor.id, top_k=5, diversify=True,
+    )
+    result = build_recommendations(db_session, request)
+
+    assert len(result["recommendations"]) >= 1
+    for rec in result["recommendations"]:
+        assert anchor.id in {item["id"] for item in rec["items"]}
+
+
+def test_diversity_is_deterministic_end_to_end(db_session):
+    tops = [make_item(db_session, name=f"Top {i}", category="Tops", color="Black", style="Formal") for i in range(3)]
+    bottoms = [make_item(db_session, name=f"Bottom {i}", category="Bottoms", color="Black", style="Formal") for i in range(3)]
+    shoes = make_item(db_session, name="Shoes", category="Footwear", color="Black", style="Formal")
+
+    pool_ids = [i.id for i in tops + bottoms] + [shoes.id]
+    request = RecommendationRequest(occasion="Office", wardrobe_item_ids=pool_ids, top_k=5)
+
+    first = build_recommendations(db_session, request)
+    second = build_recommendations(db_session, request)
+    assert first["recommendations"] == second["recommendations"]
+
+
+# --- Phase 3: structured explanation consistency ------------------------------
+
+
+def test_dimension_scores_are_present_and_consistent_with_reason(db_session):
+    top = make_item(db_session, category="Tops", color="Black", style="Formal", occasion="Office")
+    bottom = make_item(db_session, category="Bottoms", color="White", style="Formal", occasion="Office")
+
+    request = RecommendationRequest(occasion="Office", wardrobe_item_ids=[top.id, bottom.id], diversify=False)
+    result = build_recommendations(db_session, request)
+
+    rec = result["recommendations"][0]
+    assert set(rec["dimension_scores"].keys()) == {"color", "category", "style", "occasion", "weather", "preference"}
+    for value in rec["dimension_scores"].values():
+        assert 0.0 <= value <= 1.0
+    # High color dimension score should correspond to a positive reason
+    # actually mentioning color — never silently inconsistent.
+    if rec["dimension_scores"]["color"] >= 0.75:
+        assert any("color" in reason.lower() for reason in rec["positive_reasons"])
+
+
+def test_no_fabricated_reasons_for_low_scoring_dimensions(db_session):
+    """A weak/uncertain color pairing must not produce a 'colors complement
+    each other'-style positive reason."""
+    top = make_item(db_session, category="Tops", color="Purple", style="Casual")
+    bottom = make_item(db_session, category="Bottoms", color="Red", style="Casual")  # contrasting, not complementary
+
+    request = RecommendationRequest(occasion="Casual", wardrobe_item_ids=[top.id, bottom.id], diversify=False)
+    result = build_recommendations(db_session, request)
+
+    rec = result["recommendations"][0]
+    if rec["dimension_scores"]["color"] < 0.75:
+        assert not any("colors work well together" in reason.lower() for reason in rec["positive_reasons"])
