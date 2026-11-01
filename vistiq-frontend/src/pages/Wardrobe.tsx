@@ -17,6 +17,7 @@ import DeleteConfirmDialog from '../components/DeleteConfirmDialog'
 import EditItemModal from '../components/EditItemModal'
 import FilterSidebar, { type CategoryOption, type ColorOption } from '../components/FilterSidebar'
 import { useWardrobe } from '../hooks/useWardrobe'
+import { updateWardrobeItem } from '../services/api'
 import type { ClothingItem } from '../types/clothing'
 
 type SortOption = 'Recently Added' | 'Most Worn' | 'Least Worn' | 'Name (A-Z)'
@@ -57,7 +58,6 @@ export default function Wardrobe() {
   const [activeColors, setActiveColors] = useState<string[]>([])
   const [season, setSeason] = useState('All Season')
   const [sort, setSort] = useState<SortOption>('Recently Added')
-  const [favorites, setFavorites] = useState<Set<ClothingItem['id']>>(new Set())
   const [selectedId, setSelectedId] = useState<ClothingItem['id'] | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [page, setPage] = useState(1)
@@ -133,23 +133,21 @@ export default function Wardrobe() {
     setActiveColors((prev) => (prev.includes(color) ? prev.filter((c) => c !== color) : [...prev, color]))
   }
 
-  function toggleFavorite(id: ClothingItem['id']) {
-    setFavorites((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  async function toggleFavorite(id: ClothingItem['id']) {
+    const item = items.find((candidate) => candidate.id === id)
+    if (!item) return
+    try {
+      const updated = await updateWardrobeItem(id, { isFavorite: !item.isFavorite })
+      applyUpdatedItem(updated)
+    } catch {
+      // Best-effort — a failed favorite toggle isn't critical enough to
+      // interrupt browsing, and the UI already reflects the last confirmed
+      // server state (no optimistic update was applied).
+    }
   }
 
   function handleDeleted(id: ClothingItem['id']) {
     removeItem(id)
-    setFavorites((prev) => {
-      if (!prev.has(id)) return prev
-      const next = new Set(prev)
-      next.delete(id)
-      return next
-    })
     setSelectedId((current) => (current === id ? null : current))
     setDeletingItem(null)
   }
@@ -355,7 +353,7 @@ export default function Wardrobe() {
                 <ClothingCard
                   key={item.id}
                   item={item}
-                  isFavorite={favorites.has(item.id)}
+                  isFavorite={item.isFavorite ?? false}
                   onToggleFavorite={toggleFavorite}
                   isSelected={selectedId === item.id}
                   onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}

@@ -22,11 +22,35 @@ engine still decides how garments go together.
 
 ## Status
 
-**Training-ready — not yet trained.** Every file in this workspace exists and
-is internally consistent (same class list, same preprocessing, same
-architecture used by training, evaluation, and inference code), but no GPU
-training run has happened yet. `models/vistiq_clothing_classifier.pt` does
-not exist. See `models/README.md`.
+**Trained and verified.** `models/vistiq_clothing_classifier.pt` exists and
+has been independently verified in this repository (not just assumed from
+the checkpoint's own metadata):
+
+- The checkpoint loads as a `dict` with `model_state_dict` +
+  export metadata (`categories`, `num_classes`, `image_size`, `architecture`,
+  `test_accuracy`), and `ml/training/model.py`'s `load_model()` loads that
+  `model_state_dict` into a freshly-built MobileNetV3-Small with
+  `strict=True` — zero missing/unexpected keys, zero shape mismatches
+  (verified by `vistiq-backend/tests/test_model_smoke.py`, which fails the
+  test suite if this ever stops being true).
+- A real forward pass through the real checkpoint on a real uploaded photo
+  produces a prediction (category + confidence) — also exercised by
+  `test_model_smoke.py`, not a fabricated or hand-written example.
+- **The embedded `test_accuracy: 0.9086` (90.86%) figure is *previously
+  reported*, not independently reproduced in this repository.** No
+  evaluation artifacts (confusion matrix, classification report, or
+  notebook cell outputs) are present here to re-derive it from — the
+  `clothing-dataset-small` test split this number was computed against is
+  not stored in this repo (it's cloned separately into Colab per the
+  dataset section below), and the committed copy of
+  `ml/notebooks/vistiq_clothing_classifier_colab.ipynb` has empty cell
+  outputs. Treat 90.86% as the training run's own self-reported number,
+  plausible given the model genuinely passes the strict architecture/weight
+  checks above, but not something this repository can currently prove on
+  its own. If you want it independently reproduced: clone
+  `clothing-dataset-small` into the path `ml/training/dataset.py` expects,
+  then run `ml/training/evaluate.py`'s `evaluate_model()` against the real
+  test split and commit the resulting report alongside this file.
 
 ## Hardware constraint
 

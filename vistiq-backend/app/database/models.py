@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.connection import Base
@@ -28,6 +28,9 @@ class ClothingItem(Base):
     description: Mapped[str | None] = mapped_column(String, nullable=True)
 
     wear_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()

@@ -2,6 +2,14 @@ fastapi==0.141.1
 uvicorn==0.53.0
 SQLAlchemy==2.0.52
 
+# Used directly by app/services/image_validation.py (PIL.Image) and required
+# by FastAPI/Starlette to parse multipart form uploads (UploadFile/File()) —
+# both were previously only present transitively via torchvision/FastAPI's
+# own dependency resolution, so a fresh install wasn't guaranteed to pull
+# them in. Pinned to the versions already verified working in this project.
+Pillow==12.3.0
+python-multipart==0.0.32
+
 # CPU-only build — deliberately avoids the much larger CUDA-bundled wheels
 # from the default PyPI index, since the VISTIQ dev/deployment target has
 # no NVIDIA GPU (training happens separately, in Google Colab).

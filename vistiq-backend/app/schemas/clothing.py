@@ -20,6 +20,7 @@ class ClothingItemBase(BaseModel):
     gender: str | None = None
     image: str | None = None
     description: str | None = None
+    is_favorite: bool = False
 
 
 class ClothingItemCreate(ClothingItemBase):
@@ -44,6 +45,7 @@ class ClothingItemUpdate(BaseModel):
     image: str | None = None
     description: str | None = None
     wear_count: int | None = None
+    is_favorite: bool | None = None
 
 
 class ClothingItemResponse(ClothingItemBase):

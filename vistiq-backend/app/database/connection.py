@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 # vistiq-backend/ — computed from this file's location so the database path
@@ -25,10 +25,34 @@ class Base(DeclarativeBase):
 
 
 def init_db() -> None:
-    """Create all tables that don't already exist."""
+    """Create all tables that don't already exist, then apply any small
+    additive column migrations by hand (no Alembic in this project's scope).
+
+    `create_all()` only creates missing *tables* — it never alters an
+    existing table's columns, so a database file created before a new
+    column was added (e.g. a real local vistiq.db from before Phase 1's
+    `is_favorite` column) would otherwise be left on the old schema and
+    error out the first time that column is read/written. SQLite supports
+    a plain `ALTER TABLE ... ADD COLUMN`, so this performs that one-time,
+    idempotent fix-up automatically.
+    """
     from app.database import models  # noqa: F401  (registers models with Base.metadata)
 
     Base.metadata.create_all(bind=engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    inspector = inspect(engine)
+    if "clothing_items" not in inspector.get_table_names():
+        return
+
+    existing_columns = {col["name"] for col in inspector.get_columns("clothing_items")}
+    if "is_favorite" not in existing_columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE clothing_items ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0")
+            )
 
 
 def get_db() -> Session:
