@@ -32,3 +32,8 @@ argon2-cffi==25.1.0
 # to a separate GPU inference worker (this machine has no NVIDIA GPU, see
 # the CPU-only torch pin above). Stable release, not the 1.0 dev series.
 httpx==0.28.1
+
+# Phase 5.2 — loads .env into the real process environment at startup
+# (app/main.py) so VISTIQ_TRYON_WORKER_URL/_TOKEN and friends are actually
+# read by the running server, not just documented in a file nothing reads.
+python-dotenv==1.0.1

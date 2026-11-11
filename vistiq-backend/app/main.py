@@ -1,5 +1,13 @@
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+# Must run before any other app module is imported: several modules
+# (app/services/tryon_worker.py, app/security/sessions.py) read
+# configuration straight from os.environ, so .env has to be loaded into
+# the process environment first or those reads silently see nothing.
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
