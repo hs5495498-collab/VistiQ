@@ -8,24 +8,36 @@ docs/virtual-tryon.md) restricts this to non-commercial research use. This
 module never runs CatVTON itself; it only calls out to wherever it IS
 running, over HTTP.
 
-Configuration is a single env var, read fresh on every call (so tests can
-monkeypatch os.environ without reloading this module):
+Configuration is a handful of env vars, read fresh on every call (so tests
+can monkeypatch os.environ without reloading this module):
 
-    VISTIQ_TRYON_WORKER_URL — base URL of a running worker (e.g. an ngrok/
-    Cloud Tunnel URL pointing at a Colab notebook, or a real GPU server).
-    Unset/empty (the default) means no worker is connected at all — see
-    `is_worker_configured()`. This project does NOT ship a live worker;
-    wiring one up is a deployment-time decision, never hardcoded here.
+    VISTIQ_TRYON_WORKER_URL — base URL of a running worker (e.g. a
+    Cloudflare Tunnel URL pointing at a Colab notebook, or a real GPU
+    server). Unset/empty (the default) means no worker is connected at
+    all — see `is_worker_configured()`. This project does NOT ship a live
+    worker; wiring one up is a deployment-time decision, never hardcoded
+    here.
+
+    VISTIQ_TRYON_WORKER_TOKEN — bearer token the worker requires on every
+    `/tryon` request (see the worker's own `_check_auth`). Required
+    alongside the URL: a worker configured without a token would only
+    ever get a generic "worker could not process this request" failure
+    (a bare 401) instead of the honest "not configured" message, so
+    `is_worker_configured()` treats a missing token the same as a
+    missing URL. Never logged, printed, or sent anywhere except this
+    header.
 
 Expected worker contract (not implemented by this repo — the worker is
 whatever process is pointed at by the URL above):
 
     POST {WORKER_URL}/tryon
+    Authorization: Bearer {VISTIQ_TRYON_WORKER_TOKEN}
     multipart/form-data:
       person_image: file
       garment_image: file
       cloth_type: "upper" | "lower" | "overall"
     200 OK, body: image/png bytes (the generated result)
+    401: missing/incorrect token
     4xx/5xx: JSON {"detail": "<safe, human-readable message>"}
 """
 
@@ -34,6 +46,7 @@ import os
 import httpx
 
 WORKER_URL_ENV_VAR = "VISTIQ_TRYON_WORKER_URL"
+WORKER_TOKEN_ENV_VAR = "VISTIQ_TRYON_WORKER_TOKEN"
 WORKER_TIMEOUT_ENV_VAR = "VISTIQ_TRYON_WORKER_TIMEOUT_S"
 DEFAULT_TIMEOUT_S = 120.0
 
@@ -47,11 +60,15 @@ class TryOnWorkerError(Exception):
 
 
 def is_worker_configured() -> bool:
-    return bool(os.environ.get(WORKER_URL_ENV_VAR, "").strip())
+    return bool(os.environ.get(WORKER_URL_ENV_VAR, "").strip()) and bool(_worker_token())
 
 
 def _worker_url() -> str:
     return os.environ.get(WORKER_URL_ENV_VAR, "").strip().rstrip("/")
+
+
+def _worker_token() -> str:
+    return os.environ.get(WORKER_TOKEN_ENV_VAR, "").strip()
 
 
 def _timeout_seconds() -> float:
@@ -79,12 +96,15 @@ def run_tryon(
         )
 
     url = f"{_worker_url()}/tryon"
+    headers = {"Authorization": f"Bearer {_worker_token()}"}
     files = {
         "person_image": ("person.png", person_bytes, person_content_type),
         "garment_image": ("garment.png", garment_bytes, garment_content_type),
     }
     try:
-        response = httpx.post(url, files=files, data={"cloth_type": cloth_type}, timeout=_timeout_seconds())
+        response = httpx.post(
+            url, files=files, data={"cloth_type": cloth_type}, headers=headers, timeout=_timeout_seconds()
+        )
     except httpx.TimeoutException:
         raise TryOnWorkerError("The virtual try-on worker took too long to respond. Please try again.")
     except httpx.RequestError:
