@@ -33,3 +33,10 @@ vistiq-backend/data/tryon_results/
 # Phase-specific completion reports (kept locally only, never committed —
 # project reporting policy, see repo root for the local copies)
 /PHASE_*_REPORT.md
+
+# Local-only demo assets for live try-on demonstrations (CatVTON's own
+# official demo garment/person photos, copied here for convenience — see
+# their own license/source notes inside this folder). Never committed:
+# redistributing them from this repo would be a separate copy beyond
+# what CatVTON's own CC BY-NC-SA 4.0 demo distribution already covers.
+/demo-assets/
