@@ -9,6 +9,7 @@ VISTIQ's Virtual Try-On feature lets a user see one of their own wardrobe garmen
 - The full VISTIQ job lifecycle: authenticated job creation, ownership-scoped status/result retrieval, deletion, and error handling — all automated-test-covered (`vistiq-backend/tests/test_tryon_api.py`, `test_tryon_worker.py`).
 - The React UI (`vistiq-frontend/src/pages/TryOn.tsx`): garment selection, photo upload, status polling, before/after comparison, history, honest unavailable/error states.
 - **Phase 5.2**: the backend was connected to a genuinely running GPU worker (in Google Colab, exposed over a temporary authenticated HTTPS tunnel) and driven end-to-end through the real browser UI — see §9.
+- **Phase 5.3**: an 8-sample real-world quality evaluation — real human photographs, real garment photographs, run through the actual browser UI end to end, visually scored across garment preservation / pose / background / realism / artifacts — see §10. Result: 8/8 technical success; 6/8 visually convincing garment transfer; 2/8 revealed real, disclosed limitations (one minor rendering artifact, one input-framing issue), not fabricated or hidden.
 
 **What's explicitly NOT implemented:**
 - A permanent, always-on GPU worker. VISTIQ's backend runs on a machine with no NVIDIA GPU (see `vistiq-backend/requirements.txt`'s CPU-only torch pin) and calls out to a separate worker over HTTP (`app/services/tryon_worker.py`) — this repository does not ship or deploy that worker; §9 documents how to stand one up temporarily in Colab for manual testing, which is a research/experimentation environment, not a production deployment target.
@@ -99,7 +100,9 @@ Do not attempt step 2 onward against a different CatVTON commit without re-verif
 ## 8. Current limitations
 
 - No *permanent* GPU worker is deployed — see §1 and §9. §9's worker is temporary (tied to one Colab session) and was used for manual/verification purposes only, not a production deployment.
-- Only two sample pairs have been qualitatively evaluated for visual/photorealistic quality (§4) — no systematic accuracy/quality evaluation exists. The Phase 5.2 end-to-end browser verification (§9) used synthetic placeholder images (solid-color rectangles) to exercise the plumbing (auth, job lifecycle, storage, UI polling) — CatVTON's person-detection step finds no human figure in those, so that run's output image is not evidence of garment-transfer quality; §4's two demo-photo runs remain the only quality evidence.
+- Quality evaluation is now 10 sample pairs total across this project's history (§4's original 2 + §10's 8), all qualitative human ratings (1–5), not a systematic/statistical evaluation and not benchmarked against any quantitative metric (no SSIM/FID/LPIPS). The Phase 5.2 end-to-end browser verification (§9) used synthetic placeholder images (solid-color rectangles) purely to exercise the plumbing (auth, job lifecycle, storage, UI polling) — that run is not quality evidence; §4 and §10 are.
+- No `lower`-category (bottoms) sample has been evaluated — CatVTON's own official demo set (§10) does not include a dedicated lower-garment example, so this remains untested with real photos, not merely under-sampled.
+- One real, disclosed limitation from §10: a garment reference photo cropped to only part of a dress is sometimes misclassified by VISTIQ's own category predictor and, even once corrected, CatVTON will only recreate the visible cropped portion — the model is not shown the rest of the garment to reconstruct. This is a photo-framing issue, not a CatVTON defect; see §10's failure analysis and the "For dresses" guidance now shown in `AddItem.tsx`.
 - CatVTON's own license restricts this to non-commercial use (§2).
 - Only `upper`/`lower`/`overall` cloth types are supported (matching CatVTON's own categories) — Footwear and Accessories are excluded from the wardrobe picker in `TryOn.tsx`.
 - No automated frontend test suite exists for `TryOn.tsx` (consistent with the rest of VISTIQ's frontend — see the root README's Testing section).
@@ -134,3 +137,97 @@ VISTIQ_TRYON_WORKER_TIMEOUT_S=180
 - Two-account isolation: a second real account's `GET /tryon/{id}` and `GET /tryon/results/{filename}` for the first account's job both returned a plain 404 (not 403 — ownership checks never reveal that a resource exists for someone else), and the second account's own history correctly showed no try-on attempts.
 
 **Limitations specific to this setup**: it is tied to one interactive Colab session — if that notebook's runtime disconnects (Colab recycles idle runtimes), the tunnel and worker both go down, `VISTIQ_TRYON_WORKER_URL` starts pointing at nothing, and every new job falls back to the honest "unavailable" `failed` state already described in §1 (this fallback itself is automated-test-covered and does not depend on a worker actually being reachable). Reconnecting requires rerunning the Colab setup (§6) and updating `.env` with the new tunnel URL.
+
+## 10. Real-world visual quality evaluation (Phase 5.3)
+
+§4 established that CatVTON inference *runs*. This section asks a different question — does the generated image actually look like a convincing garment transfer? — using real photographs, run through the real VISTIQ application (not a raw inference script), scored by human visual inspection against named criteria. It does not invent or report SSIM/FID/LPIPS or any other automated metric; none were computed.
+
+### 10.1 Dataset
+
+8 test pairs, all sourced from CatVTON's own official demo assets — [`Zheng-Chong/CatVTON`](https://github.com/Zheng-Chong/CatVTON), commit `7818397f25613beedb3d861a34769f607cfcf3b1`, `resource/demo/example/` — licensed **CC BY-NC-SA 4.0** by the repository's own `LICENSE` and README ("All the materials, including code, checkpoints, and demo, are made available under the Creative Commons BY-NC-SA 4.0 license"), used here non-commercially for exactly the research/academic purpose that license permits. CatVTON's own `app.py` additionally credits the person photos as coming from the public demos of [OOTDiffusion](https://huggingface.co/spaces/levihsu/OOTDiffusion) and [OutfitAnyone](https://www.outfitanyone.org), and the garment photos as sourced "from the Internet" by CatVTON's authors — no personal or private photograph of any real individual outside that published demo set was used, and nothing was uploaded to any third party beyond the already-authorized VISTIQ backend and its own GPU worker.
+
+No `lower` (bottoms) example exists in CatVTON's own official demo set — only `condition/upper` and `condition/overall` folders are provided — so this evaluation covers 4 upper-body pairs and 4 overall (dress) pairs; 6–10 pairs were requested and 8 were achievable from genuinely-licensed source material. No lower-body real-photo pair has been evaluated (see §8).
+
+| ID | Garment (CatVTON source file) | Category → cloth_type | Person photo (CatVTON source file) |
+|---|---|---|---|
+| TP01 | `condition/upper/21514384_52353349_1000.jpg` — grey cardigan, Snoopy patch | Tops → upper | `person/men/Simon_1.png` |
+| TP02 | `condition/upper/22790049_53294275_1000.jpg` — cream Snoopy tennis vest | Tops → upper | `person/men/Yifeng_0.png` |
+| TP03 | `condition/upper/23255574_53383833_1000.jpg` — brown/white jersey, "95" | Tops → upper | `person/men/model_5.png` |
+| TP04 | `condition/upper/24083449_54173465_2048.jpg` — black graphic tee | Tops → upper | `person/men/model_7.png` |
+| TP05 | `condition/overall/21744571_51588794_1000.jpg` — floral dress | Dresses → overall | `person/women/049713_0.jpg` |
+| TP06 | `condition/overall/22153949_52376342_1000.jpg` — lime draped dress | Dresses → overall | `person/women/1-model_3.png` |
+| TP07 | `condition/overall/23962182_54027982_1000.jpg` — cream knit shirt-dress | Dresses → overall | `person/women/2-model_4.png` |
+| TP08 | `condition/overall/24047235_54199143_1000.jpg` — white chevron polo dress | Dresses → overall | `person/women/model_8.png` |
+
+No input image was cropped, retouched, or otherwise modified before upload — each was used exactly as downloaded from the source commit above.
+
+### 10.2 How this was run
+
+Through the actual application, not a direct-inference script: a dedicated test account was registered in the real VISTIQ frontend (`http://127.0.0.1:5173`), each garment was added via the real **Add Item** flow (real upload → real `app/services/image_validation.py` validation → real classical-CV clothing analysis for category/color suggestion → manual review of that suggestion, same as any real user would do), and each pair was then run through the real **Try-On** page: select garment → upload person photo → submit → observe the UI poll from `pending`/`processing` to a terminal state → view the rendered before/after result in the browser. All 8 jobs were created, processed, and completed through `POST /tryon`, the real background task, and the real live Colab worker over the authenticated tunnel from §9 — never a mocked `tryon_worker`.
+
+One real, incidental finding from this process: VISTIQ's own classical clothing-image-analysis step (not CatVTON) mispredicted the category for TP06/TP07/TP08 as `Bottoms`/`Tops`/`Tops` respectively, each flagged by the UI's own low-confidence/overexposure warning — because the source photos themselves are cropped product shots showing only part of the dress. Each was manually corrected to `Dresses` before saving, exactly as the UI prompts a real user to do ("AI predicted — please review"). This is discussed further in §10.5.
+
+### 10.3 Visual quality evaluation
+
+Scores are **subjective human ratings, 1 (poor) to 5 (excellent)** — not an automated metric.
+
+| ID | Garment preservation | Pose consistency | Background preservation | Realism | Artifacts | Notes |
+|---|---|---|---|---|---|---|
+| TP01 | 5 | 5 | 5 | 4 | None | Cardigan rendered open, bare torso visible underneath — plausible given the source photo shows no undershirt, but not what a user would expect by default. |
+| TP02 | 5 | 5 | 5 | 3 | Garment-body boundary artifact | A visible texture/seam discontinuity on the legs just below the vest hem (the shorts fabric picked up an inconsistent grey patch). |
+| TP03 | 5 | 5 | 5 | 5 | None | Jersey number/text fully legible, clean result. |
+| TP04 | 5 | 5 | 5 | 5 | None | Graphic tee text/logo fully legible, clean result. |
+| TP05 | 5 | 5 | 5 | 5 | None | Floral pattern and both colors richly preserved; clean waist-to-hem transition. |
+| TP06 | 4 | 5 | 5 | 4 | None (see note) | Texture/drape/color of the *visible* garment area faithfully reproduced, but the source photo only shows the draped bodice — CatVTON correctly rendered only that, leaving jeans visible below; not a full dress. Input-framing limitation, not a model defect — see §10.5. |
+| TP07 | 5 | 5 | 5 | 5 | None | Trim, buttons, and knit texture all preserved; converted a crop-top-and-skirt photo into a coherent belted shirt-dress. |
+| TP08 | 5 | 5 | 5 | 5 | None | Chevron stripe colors and polo collar detail precisely preserved. |
+
+**Garment preservation**: 6/8 scored 5/5 — color, pattern, graphics/text, and trim details were all transferred faithfully, including fine details like jersey numbers and graphic-tee text remaining legible. The 2 scores below 5 (TP02, TP06) reflect a rendering artifact and an input-framing limitation respectively, not a failure to preserve what was actually asked of the model.
+
+**Pose and background**: 8/8 scored 5/5 on both — every result preserved the original pose, face, proportions, and background exactly, with no distortion observed in any sample.
+
+**Artifacts**: 7/8 showed no artifacts at all (no extra limbs, no distorted hands, no missing body parts, no unnatural shadows). TP02 showed one localized garment-body boundary/texture-blend artifact on the legs. No sample showed a limb, hand, or anatomical distortion.
+
+### 10.4 Performance
+
+All timings below are the backend's own `TryOnJob.created_at`/`completed_at` database timestamps (real server-recorded values, not a stopwatch estimate), covering the full round trip: VISTIQ backend → authenticated HTTPS tunnel → Colab worker → CatVTON inference → PNG returned → saved by `tryon_storage`.
+
+| ID | Garment category | Input person photo dimensions | Output dimensions | Total duration | Result |
+|---|---|---|---|---|---|
+| TP01 | upper | 960×1280 | 768×1024 PNG | 77.73 s | success |
+| TP02 | upper | 960×1280 | 768×1024 PNG | 79.61 s | success |
+| TP03 | upper | 768×1024 | 768×1024 PNG | 77.79 s | success |
+| TP04 | upper | 768×1024 | 768×1024 PNG | 79.30 s | success |
+| TP05 | overall | 768×1024 | 768×1024 PNG | 78.73 s | success |
+| TP06 | overall | 768×1024 | 768×1024 PNG | 80.26 s | success |
+| TP07 | overall | 768×1024 | 768×1024 PNG | 80.19 s | success |
+| TP08 | overall | 768×1024 | 768×1024 PNG | 76.96 s | success |
+
+- Successful jobs: **8 / 8**. Failed jobs: **0**.
+- Success rate: **100%** (8/8).
+- Average total duration: **78.82 s**. Median: **79.02 s**. Range: 76.96 s–80.26 s (a 3.3 s spread — consistent, not bimodal between garment categories).
+- CatVTON always produced a 768×1024 output regardless of the input person photo's own resolution (960×1280 inputs were resized internally) — consistent with the §3/§4 working resolution.
+- GPU memory was **not independently re-instrumented per job for this batch** (no live `nvidia-smi` monitoring was attached to these specific 8 runs) — this is a real, disclosed gap, not a zero. The only GPU memory figures on record for this pipeline are from separate, earlier single-request measurements (§4: ~5.25 GB allocated / ~7.27 GB reserved; §9: ~7 GB used), included here as reference points only, not as a measurement of these 8 jobs specifically.
+
+### 10.5 Failure analysis
+
+No job failed at the API, validation, or inference level (8/8 completed). The two sub-5 visual scores break down as:
+
+- **TP02 (garment-body boundary artifact)** — a model inference quality issue: CatVTON produced a visible texture discontinuity on the legs just below the vest hem. The input images (vest photo, person photo) were both valid, well-lit, and correctly categorized — this was not an input-quality problem. Classified as: **visually imperfect but technically successful** result.
+- **TP06 (incomplete dress representation)** — not a CatVTON or VISTIQ bug: the source garment photograph itself (CatVTON's own official demo asset) is cropped to show only the draped bodice of the dress, not its full length. VISTIQ's classical category predictor read this (reasonably) as `Bottoms`/`Tops`-like for TP06/07/08, each correctly flagged by the UI's own low-confidence warning for manual review; once corrected to `Dresses`, CatVTON faithfully rendered exactly the garment region it was shown. The model cannot reconstruct the hidden, out-of-frame portion of a garment. Classified as: **input/data limitation**, distinct from a model-inference failure — and the reason §10.2's finding led directly to the §10.6 improvement.
+
+No occlusion, incorrect garment category (after manual correction), unsupported garment type, or GPU memory constraint was observed as a cause of any issue in this batch.
+
+### 10.6 Improvement implemented (evidence-based)
+
+**Change**: `vistiq-frontend/src/pages/AddItem.tsx` now shows an additional styling tip — "For dresses: frame the full garment from shoulder to hem. A photo cropped to just part of the dress (e.g. only the bodice) can be misread as a top, and Virtual Try-On will only recreate the visible portion." — whenever the selected category is `Dresses`. It does not touch classification logic, the recommendation engine, or any existing behavior for other categories; it is additive UI guidance only.
+
+**Evidence it addresses**: 3 of the 4 dress samples in this batch (TP06, TP07, TP08) were initially mispredicted as `Bottoms`/`Tops` by the existing classical-CV category step specifically because the source photos were cropped product shots, and TP06's result was visibly incomplete as a direct consequence of that same framing (§10.5). This tip targets the actual, observed cause.
+
+**Before/after**: verified directly in the running app — selecting any other category shows only the existing "flat-lay photo" tip; selecting `Dresses` additionally shows the new tip (confirmed via browser screenshot during this session, not committed as an image). No change to `is_worker_configured`, the category classifier itself, scoring, or recommendation logic.
+
+**Regression check**: `npm run lint` and `npm run build` (`tsc -b && vite build`) both clean after the change — see §11 (Testing, root README).
+
+### 10.7 What this evaluation does and does not establish
+
+Does establish: CatVTON, driven through VISTIQ's real UI with real human and garment photographs, reliably completes (8/8) and in the large majority of cases (6/8) produces a visually convincing, artifact-free garment transfer with preserved pose and background, within a consistent ~77–80 s window per request on a single T4. Does not establish: performance under concurrent load, performance on `lower`-category garments (no real sample available — see §8), a statistically significant quality rate (n=8, qualitative only), or any claim that the one observed rendering artifact (TP02) never recurs.
