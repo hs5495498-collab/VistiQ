@@ -66,6 +66,7 @@ Frontend
   - `GET /wardrobe/images/{filename}` — serves a stored photo, only to the user who owns the item it's attached to (see §8)
   - `POST /recommend` — outfit recommendation, from the authenticated user's wardrobe only
   - `POST /analyze-clothing` — ML clothing image analysis (see §10)
+  - `POST /tryon`, `GET /tryon`, `GET /tryon/{id}`, `GET /tryon/results/{filename}`, `DELETE /tryon/{id}` — virtual try-on jobs, experimental (see §16)
 - Every route above except `/`, `/health`, `/auth/register`, and `/auth/login` requires a valid session; every state-changing route (`POST`/`PUT`/`DELETE`) additionally requires the CSRF header described in §7.
 - CORS is restricted to the local Vite dev origins (`http://localhost:5173`, `http://127.0.0.1:5173`), with `allow_credentials=True` (required for the session cookie to work cross-port in local dev).
 
@@ -155,3 +156,11 @@ The system has been manually integration-tested end-to-end, including with the r
 - Delete the associated uploaded file when a wardrobe item with an image is deleted.
 - A scheduled cleanup job for expired sessions, rather than today's lazy (on-next-access) deletion.
 - A way to reclaim the pre-authentication legacy wardrobe rows (`user_id = NULL`) — currently preserved but permanently unreachable through the API by design (see §8).
+
+## 16. Virtual Try-On (Phase 5, experimental)
+
+A user can see one of their own wardrobe garments rendered onto a photo of themselves, via [CatVTON](https://github.com/Zheng-Chong/CatVTON) — a real diffusion-based virtual try-on model. Genuine CatVTON inference was verified (two sample runs, real GPU timings and VRAM measurements, visually correct results), and the full job lifecycle (authenticated creation, ownership-scoped status/result/delete, CSRF, input validation, error handling) is implemented and automated-test-covered (`vistiq-backend/tests/test_tryon_api.py`). The one piece **not** shipped by this repository is a live, always-on GPU worker — VISTIQ's backend has no GPU and calls out to one over HTTP (`app/services/tryon_worker.py`); with none configured, a try-on job is still created for real but immediately and honestly marked "failed: unavailable," never faked as a success. CatVTON's fine-tuned weights are CC BY-NC-SA 4.0 (non-commercial) — this feature is a research proof of concept, not cleared for commercial use as-is.
+
+Full detail — exact verified dependency versions (several deviate from CatVTON's own `requirements.txt` for documented reasons), the real inference numbers, the worker HTTP contract, licensing, and how to reproduce the Colab run — is in **[`docs/virtual-tryon.md`](docs/virtual-tryon.md)**.
+
+Frontend: `vistiq-frontend/src/pages/TryOn.tsx`, routed at `/try-on`. Backend: `vistiq-backend/app/routes/tryon.py`, `app/services/tryon_worker.py`, `app/services/tryon_storage.py`, `app/database/models.py:TryOnJob`.

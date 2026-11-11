@@ -11,9 +11,24 @@ interface UploadDropzoneProps {
   onFileChange: (file: File | null) => void
   error?: string
   maxSizeMB?: number
+  /** Accessible label for the underlying file input and the "Remove"/preview
+   * alt text — defaults to "Garment photo" (this component's original,
+   * only use) so existing callers (AddItem.tsx) need no change. Pass an
+   * override for any other context, e.g. TryOn.tsx's person-photo upload. */
+  label?: string
+  /** Unique id for the file input — must be unique per page if more than
+   * one UploadDropzone is ever rendered at once. */
+  fieldId?: string
 }
 
-export default function UploadDropzone({ file, onFileChange, error, maxSizeMB = DEFAULT_MAX_SIZE_MB }: UploadDropzoneProps) {
+export default function UploadDropzone({
+  file,
+  onFileChange,
+  error,
+  maxSizeMB = DEFAULT_MAX_SIZE_MB,
+  label = 'Garment photo',
+  fieldId = 'garment-photo',
+}: UploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -44,7 +59,7 @@ export default function UploadDropzone({ file, onFileChange, error, maxSizeMB = 
   const fileInput = (
     <input
       ref={inputRef}
-      id="garment-photo"
+      id={fieldId}
       type="file"
       accept={ACCEPTED_TYPES.join(',')}
       className="hidden"
@@ -56,7 +71,7 @@ export default function UploadDropzone({ file, onFileChange, error, maxSizeMB = 
     return (
       <div className="flex flex-col gap-3">
         <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-canvas shadow-sm">
-          <img src={previewUrl} alt="Selected garment preview" className="h-full w-full object-cover" />
+          <img src={previewUrl} alt={`Selected ${label.toLowerCase()} preview`} className="h-full w-full object-cover" />
           <button
             type="button"
             onClick={handleRemove}
@@ -80,8 +95,8 @@ export default function UploadDropzone({ file, onFileChange, error, maxSizeMB = 
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor="garment-photo" className="sr-only">
-        Garment photo
+      <label htmlFor={fieldId} className="sr-only">
+        {label}
       </label>
       <div
         onClick={() => inputRef.current?.click()}
@@ -111,7 +126,7 @@ export default function UploadDropzone({ file, onFileChange, error, maxSizeMB = 
         <span className="relative flex h-14 w-14 items-center justify-center rounded-full bg-surface text-primary shadow-sm" aria-hidden="true">
           <Upload size={24} />
         </span>
-        <p className="relative font-heading text-h3 text-primary">Drag &amp; drop your garment photo</p>
+        <p className="relative font-heading text-h3 text-primary">Drag &amp; drop your {label.toLowerCase()}</p>
         <p className="relative font-body text-body-sm text-secondary">Supports JPG, PNG, WEBP up to {maxSizeMB}MB</p>
         <button
           type="button"

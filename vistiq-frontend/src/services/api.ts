@@ -6,7 +6,13 @@
  * (from src/types/clothing.ts) and does the translation internally.
  */
 
-import type { ClothingAnalysisResult, ClothingItem, RecommendationRequest, RecommendationResponse } from '../types/clothing'
+import type {
+  ClothingAnalysisResult,
+  ClothingItem,
+  RecommendationRequest,
+  RecommendationResponse,
+  TryOnJob,
+} from '../types/clothing'
 
 const API_BASE_URL: string = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
 
@@ -454,4 +460,97 @@ export async function logoutUser(): Promise<void> {
 export async function getCurrentUser(): Promise<AuthUser> {
   const raw = await apiFetch<ApiUserPublic>('/auth/me')
   return mapApiUser(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Virtual try-on (backend: app/schemas/tryon.py) — Phase 5, experimental.
+//
+// See docs/virtual-tryon.md for the full picture: this always creates a real
+// job record, but POST /tryon returns the job's state at *creation* time
+// ("pending") — the actual GPU inference (if a worker is even configured;
+// see that doc) runs after the response is sent, so the frontend must poll
+// getTryOnJob() for the final "completed"/"failed" status. It's also the
+// backend's own job to decide "no worker configured" immediately resolves
+// to "failed" rather than staying "pending" forever — see TryOn.tsx for how
+// that specific message is surfaced differently from a genuine per-attempt
+// failure.
+// ---------------------------------------------------------------------------
+
+interface ApiTryOnJob {
+  id: number
+  garment_item_id: number | null
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  result_image: string | null
+  error_message: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+function mapApiTryOnJob(raw: ApiTryOnJob): TryOnJob {
+  return {
+    id: raw.id,
+    garmentItemId: raw.garment_item_id,
+    status: raw.status,
+    resultImage: raw.result_image ? resolveImageUrl(raw.result_image) : null,
+    errorMessage: raw.error_message,
+    createdAt: raw.created_at,
+    completedAt: raw.completed_at,
+  }
+}
+
+/** Uploads a person photo and kicks off a try-on job against one of the
+ * current user's own wardrobe garments. `clothType` must match what that
+ * garment actually is — "upper" for tops, "lower" for bottoms/trousers,
+ * "overall" for dresses/one-piece garments (the backend rejects any other
+ * value with a 400). */
+export async function createTryOnJob(input: {
+  garmentItemId: ClothingItem['id']
+  clothType: 'upper' | 'lower' | 'overall'
+  personImage: File
+}): Promise<TryOnJob> {
+  const formData = new FormData()
+  formData.append('garment_item_id', String(input.garmentItemId))
+  formData.append('cloth_type', input.clothType)
+  formData.append('person_image', input.personImage)
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/tryon`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+      headers: withCsrfHeader(),
+    })
+  } catch {
+    throw new ApiError('VISTIQ backend is unavailable. Start the FastAPI server and try again.', 0)
+  }
+
+  if (!response.ok) {
+    let detail = `Request failed with status ${response.status}`
+    try {
+      const body = (await response.json()) as { detail?: string }
+      if (typeof body.detail === 'string') detail = body.detail
+    } catch {
+      // Response body wasn't JSON — keep the generic message.
+    }
+    throw new ApiError(detail, response.status)
+  }
+
+  return mapApiTryOnJob((await response.json()) as ApiTryOnJob)
+}
+
+/** Polls a single job's current status — call this on an interval after
+ * createTryOnJob() until status is "completed" or "failed". */
+export async function getTryOnJob(id: TryOnJob['id']): Promise<TryOnJob> {
+  const raw = await apiFetch<ApiTryOnJob>(`/tryon/${id}`)
+  return mapApiTryOnJob(raw)
+}
+
+export async function listTryOnJobs(): Promise<TryOnJob[]> {
+  const jobs = await apiFetch<ApiTryOnJob[]>('/tryon')
+  return jobs.map(mapApiTryOnJob)
+}
+
+export async function deleteTryOnJob(id: TryOnJob['id']): Promise<void> {
+  await apiFetch<{ message: string }>(`/tryon/${id}`, { method: 'DELETE' })
 }

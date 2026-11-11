@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Home, LogIn, LogOut, Menu, PlusSquare, Shirt, Sparkles, UserPlus, Wand2, X } from 'lucide-react'
+import { Camera, Home, LogIn, LogOut, Menu, PlusSquare, Shirt, Sparkles, UserPlus, Wand2, X } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 const NAV_LINKS = [
@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { to: '/add-item', label: 'Add Item', icon: PlusSquare },
   { to: '/stylist', label: 'AI Stylist', icon: Sparkles },
   { to: '/recommendations', label: 'Recommendations', icon: Wand2 },
+  { to: '/try-on', label: 'Try-On', icon: Camera },
 ]
 
 function linkClasses(isActive: boolean) {

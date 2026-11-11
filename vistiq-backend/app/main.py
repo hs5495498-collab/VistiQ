@@ -7,6 +7,7 @@ from app.database.connection import init_db
 from app.routes.auth import router as auth_router
 from app.routes.clothing_analysis import router as clothing_analysis_router
 from app.routes.recommendation import router as recommendation_router
+from app.routes.tryon import router as tryon_router
 from app.routes.wardrobe import router as wardrobe_router
 
 
@@ -53,6 +54,7 @@ app.include_router(auth_router)
 app.include_router(wardrobe_router)
 app.include_router(recommendation_router)
 app.include_router(clothing_analysis_router)
+app.include_router(tryon_router)
 
 # Phase 4: uploaded wardrobe photos are served through an authenticated,
 # ownership-checked route (app/routes/wardrobe.py:get_wardrobe_image()),
