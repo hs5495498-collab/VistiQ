@@ -343,6 +343,17 @@ export default function AddItem() {
               flat-lay photos on a plain, non-reflective background give the clearest color and silhouette read.
             </p>
           </div>
+
+          {category === 'Dresses' && (
+            <div className="flex items-start gap-2.5 rounded-lg bg-canvas p-3">
+              <Lightbulb size={20} className="mt-0.5 shrink-0 text-secondary" aria-hidden="true" />
+              <p className="font-body text-body-sm text-secondary">
+                <strong className="font-label text-label text-primary">For dresses: </strong>
+                frame the full garment from shoulder to hem. A photo cropped to just part of the dress (e.g. only
+                the bodice) can be misread as a top, and Virtual Try-On will only recreate the visible portion.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-6 lg:w-[58%]">
