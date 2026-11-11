@@ -85,6 +85,23 @@ export interface ClothingAnalysisResult {
   qualityWarnings: string[]
 }
 
+/** Phase 5 (experimental) — see src/services/api.ts's try-on section and
+ * docs/virtual-tryon.md. "failed" with errorMessage set to an "unavailable"
+ * message means no GPU worker is configured at all, not that this specific
+ * attempt broke — see TryOn.tsx for how the two are distinguished in the UI. */
+export type TryOnStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+export interface TryOnJob {
+  id: number
+  garmentItemId: number | null
+  status: TryOnStatus
+  /** Fully-qualified, resolved image URL — null until status is "completed". */
+  resultImage: string | null
+  errorMessage: string | null
+  createdAt: string
+  completedAt: string | null
+}
+
 export interface StylistSelection {
   occasion: Occasion | string
   style: ClothingStyle | string

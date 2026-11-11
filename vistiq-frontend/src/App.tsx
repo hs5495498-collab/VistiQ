@@ -8,6 +8,7 @@ import Wardrobe from './pages/Wardrobe'
 import AddItem from './pages/AddItem'
 import AIStylist from './pages/AIStylist'
 import Recommendations from './pages/Recommendations'
+import TryOn from './pages/TryOn'
 
 function App() {
   return (
@@ -47,6 +48,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Recommendations />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/try-on"
+            element={
+              <ProtectedRoute>
+                <TryOn />
               </ProtectedRoute>
             }
           />

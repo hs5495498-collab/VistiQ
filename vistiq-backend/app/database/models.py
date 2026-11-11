@@ -93,3 +93,48 @@ class ClothingItem(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
+
+
+class TryOnJob(Base):
+    """A single virtual try-on request (Phase 5 — experimental).
+
+    Brand-new table, so `init_db()`'s `create_all()` is sufficient on its
+    own — unlike `ClothingItem.user_id` above, there is no pre-existing
+    table to retrofit a column onto, so no manual `ALTER TABLE` step is
+    needed here (see app/database/connection.py's `_add_missing_columns`).
+
+    `garment_item_id` is nullable + ON DELETE is NOT cascaded by SQLAlchemy
+    here on purpose: deleting the source wardrobe item must never delete or
+    corrupt the historical job record (the job keeps its own copy of the
+    person image and, once complete, its own result image — it does not
+    depend on the garment item still existing to be viewable).
+    """
+
+    __tablename__ = "tryon_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    garment_item_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("clothing_items.id"), nullable=True, index=True
+    )
+
+    # Server-generated storage paths (see app/services/tryon_storage.py) —
+    # never a client-supplied path, exactly like ClothingItem.image.
+    person_image: Mapped[str] = mapped_column(String, nullable=False)
+    result_image: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # "pending" -> "processing" -> "completed" | "failed". Checked in
+    # Python (app/schemas/tryon.py), not a DB-level CHECK constraint, to
+    # match this project's existing style (see ClothingItem.color_reliability).
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", server_default="pending")
+
+    # Set only on a genuine failure, and always a safe, generic message —
+    # never a raw exception string, which could leak internal paths/stack
+    # details to the client. See app/services/tryon_worker.py.
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    user: Mapped["User"] = relationship("User")
+    garment_item: Mapped["ClothingItem | None"] = relationship("ClothingItem")

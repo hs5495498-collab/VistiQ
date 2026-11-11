@@ -23,7 +23,7 @@ from app.database.connection import Base, get_db
 from app.database.models import ClothingItem, User  # noqa: F401 (registers the models with Base.metadata)
 from app.main import app
 from app.security.passwords import hash_password
-from app.services import image_storage
+from app.services import image_storage, tryon_storage
 
 TEST_USER_EMAIL = "test-user@example.com"
 TEST_USER_PASSWORD = "correct-horse-battery"
@@ -104,6 +104,10 @@ def client(test_engine, tmp_path, monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setattr(connection, "engine", test_engine)
     monkeypatch.setattr(image_storage, "UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr(tryon_storage, "PERSON_IMAGES_DIR", tmp_path / "tryon_person_images")
+    monkeypatch.setattr(tryon_storage, "RESULT_IMAGES_DIR", tmp_path / "tryon_results")
+    (tmp_path / "tryon_person_images").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tryon_results").mkdir(parents=True, exist_ok=True)
 
     with TestClient(app) as test_client:
         yield test_client
@@ -154,6 +158,10 @@ def second_authenticated_client(test_engine, tmp_path, monkeypatch):
     app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setattr(connection, "engine", test_engine)
     monkeypatch.setattr(image_storage, "UPLOADS_DIR", tmp_path)
+    monkeypatch.setattr(tryon_storage, "PERSON_IMAGES_DIR", tmp_path / "tryon_person_images")
+    monkeypatch.setattr(tryon_storage, "RESULT_IMAGES_DIR", tmp_path / "tryon_results")
+    (tmp_path / "tryon_person_images").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "tryon_results").mkdir(parents=True, exist_ok=True)
 
     with TestClient(app) as test_client:
         _login(test_client, OTHER_USER_EMAIL, OTHER_USER_PASSWORD, OTHER_USER_NAME)

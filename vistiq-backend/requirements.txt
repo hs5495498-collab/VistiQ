@@ -27,3 +27,8 @@ opencv-python-headless==5.0.0.93
 # maintained, standard Python binding for the Argon2 reference
 # implementation — never roll your own password hashing.
 argon2-cffi==25.1.0
+
+# Phase 5 — HTTP client for app/services/tryon_worker.py, which calls out
+# to a separate GPU inference worker (this machine has no NVIDIA GPU, see
+# the CPU-only torch pin above). Stable release, not the 1.0 dev series.
+httpx==0.28.1

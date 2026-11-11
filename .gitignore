@@ -24,6 +24,12 @@ Thumbs.db
 vistiq-backend/data/uploads/
 vistiq-backend/data/*.db
 
+# Phase 5 (experimental) — virtual try-on person photos and generated
+# results (app/services/tryon_storage.py). Same reasoning as uploads/
+# above: locally-generated user data, never committed.
+vistiq-backend/data/tryon_person_images/
+vistiq-backend/data/tryon_results/
+
 # Phase-specific completion reports (kept locally only, never committed —
 # project reporting policy, see repo root for the local copies)
 /PHASE_*_REPORT.md
