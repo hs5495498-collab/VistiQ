@@ -11,17 +11,22 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database.connection import init_db
+from app.database.connection import SessionLocal, init_db
 from app.routes.auth import router as auth_router
 from app.routes.clothing_analysis import router as clothing_analysis_router
 from app.routes.recommendation import router as recommendation_router
-from app.routes.tryon import router as tryon_router
+from app.routes.tryon import recover_interrupted_jobs, router as tryon_router
 from app.routes.wardrobe import router as wardrobe_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    db = SessionLocal()
+    try:
+        recover_interrupted_jobs(db)
+    finally:
+        db.close()
     yield
 
 

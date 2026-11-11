@@ -131,6 +131,29 @@ def test_delete_clothing_item(authenticated_client):
     assert get_response.status_code == 404
 
 
+def test_deleting_item_removes_its_uploaded_image_file(authenticated_client):
+    """Regression test — `delete_clothing_item` calls `delete_clothing_image`
+    after the DB row is gone, but that cleanup path had no direct test
+    coverage (test_delete_clothing_item above never attaches an image)."""
+    from app.services import image_storage
+
+    upload = authenticated_client.post(
+        "/wardrobe/images", files={"file": ("photo.jpg", _valid_jpeg_bytes(), "image/jpeg")}
+    )
+    image_url = upload.json()["image"]
+    filename = image_url.rsplit("/", 1)[-1]
+
+    created = authenticated_client.post(
+        "/wardrobe",
+        json={"name": "Item", "category": "Tops", "color": "Black", "style": "Casual", "image": image_url},
+    ).json()
+    assert (image_storage.UPLOADS_DIR / filename).is_file()
+
+    delete_response = authenticated_client.delete(f"/wardrobe/{created['id']}")
+    assert delete_response.status_code == 200
+    assert not (image_storage.UPLOADS_DIR / filename).exists()
+
+
 def test_delete_nonexistent_clothing_item_returns_404(authenticated_client):
     response = authenticated_client.delete("/wardrobe/999999")
     assert response.status_code == 404

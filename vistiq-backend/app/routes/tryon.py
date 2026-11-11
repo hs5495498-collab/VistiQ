@@ -29,6 +29,27 @@ from app.services.image_validation import read_and_validate_image
 
 router = APIRouter(prefix="/tryon", tags=["tryon"])
 
+
+def recover_interrupted_jobs(db: Session) -> int:
+    """Called once at process startup (see app/main.py's lifespan). A job
+    only ever sits at "pending"/"processing" while this process's own
+    BackgroundTask is actively running it — every normal exit path
+    (success, TryOnWorkerError, or an unexpected exception) already moves
+    it to a terminal status before that task returns. The one case that
+    doesn't go through any of those exit paths is the process itself
+    dying mid-job (crash, kill, power loss) — any row still non-terminal
+    from a *previous* run is therefore orphaned, not actually in
+    progress, and would otherwise stay "pending"/"processing" forever
+    with nothing left to ever finish it. Returns the number recovered."""
+    orphaned = db.query(TryOnJob).filter(TryOnJob.status.in_(["pending", "processing"])).all()
+    for job in orphaned:
+        job.status = "failed"
+        job.error_message = "Virtual try-on was interrupted by a server restart. Please try again."
+        job.completed_at = datetime.utcnow()
+    if orphaned:
+        db.commit()
+    return len(orphaned)
+
 ALLOWED_CLOTH_TYPES = {"upper", "lower", "overall"}
 
 
