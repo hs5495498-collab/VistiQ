@@ -10,9 +10,12 @@ docs/virtual-tryon.md); it is NOT exercised by this automated suite.
 """
 
 import io
+from datetime import datetime
 
 from PIL import Image
 
+from app.database.models import TryOnJob
+from app.routes.tryon import recover_interrupted_jobs
 from app.services import tryon_worker
 
 
@@ -315,3 +318,64 @@ def test_delete_job_removes_it_and_its_images(authenticated_client, monkeypatch)
 
 def test_delete_nonexistent_job_returns_404(authenticated_client):
     assert authenticated_client.delete("/tryon/999999").status_code == 404
+
+
+# --- Startup recovery of jobs orphaned by a server crash -----------------------
+
+
+def test_recover_interrupted_jobs_fails_pending_and_processing_but_leaves_terminal_jobs_alone(
+    db_session, test_user_id
+):
+    pending = TryOnJob(user_id=test_user_id, person_image="/tryon/person-images/a.png", status="pending")
+    processing = TryOnJob(user_id=test_user_id, person_image="/tryon/person-images/b.png", status="processing")
+    completed = TryOnJob(
+        user_id=test_user_id,
+        person_image="/tryon/person-images/c.png",
+        result_image="/tryon/results/c.png",
+        status="completed",
+        completed_at=datetime.utcnow(),
+    )
+    failed = TryOnJob(
+        user_id=test_user_id,
+        person_image="/tryon/person-images/d.png",
+        status="failed",
+        error_message="some earlier real failure",
+        completed_at=datetime.utcnow(),
+    )
+    db_session.add_all([pending, processing, completed, failed])
+    db_session.commit()
+
+    recovered_count = recover_interrupted_jobs(db_session)
+    assert recovered_count == 2
+
+    db_session.refresh(pending)
+    db_session.refresh(processing)
+    db_session.refresh(completed)
+    db_session.refresh(failed)
+
+    for job in (pending, processing):
+        assert job.status == "failed"
+        assert job.error_message == "Virtual try-on was interrupted by a server restart. Please try again."
+        assert job.completed_at is not None
+
+    # Already-terminal jobs are left completely untouched.
+    assert completed.status == "completed"
+    assert completed.error_message is None
+    assert failed.status == "failed"
+    assert failed.error_message == "some earlier real failure"
+
+
+def test_recover_interrupted_jobs_is_a_no_op_when_nothing_is_orphaned(db_session, test_user_id):
+    completed = TryOnJob(
+        user_id=test_user_id,
+        person_image="/tryon/person-images/e.png",
+        result_image="/tryon/results/e.png",
+        status="completed",
+        completed_at=datetime.utcnow(),
+    )
+    db_session.add(completed)
+    db_session.commit()
+
+    assert recover_interrupted_jobs(db_session) == 0
+    db_session.refresh(completed)
+    assert completed.status == "completed"

@@ -153,7 +153,6 @@ The system has been manually integration-tested end-to-end, including with the r
 - Color extraction is now segmentation-aware (GrabCut + K-means, see §10) but still not reliable enough to promote from "suggestion" to a trusted default — a learned, garment-aware segmentation model would be the next step if that's ever needed.
 - Add an automated frontend (vitest) test suite (backend pytest suite added in Phase 1).
 - Expand the recommendation engine's color/style rule tables as more real wardrobe data becomes available.
-- Delete the associated uploaded file when a wardrobe item with an image is deleted.
 - A scheduled cleanup job for expired sessions, rather than today's lazy (on-next-access) deletion.
 - A way to reclaim the pre-authentication legacy wardrobe rows (`user_id = NULL`) — currently preserved but permanently unreachable through the API by design (see §8).
 
