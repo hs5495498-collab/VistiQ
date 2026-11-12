@@ -20,7 +20,7 @@ For a given request (occasion, optional style, optional weather, a wardrobe item
 2. **Compatibility scoring** — each candidate is scored 0–100 from six weighted components: color compatibility (30%), category compatibility (20%), style compatibility (20%), occasion fit (15%), user wear-history preference (10%), and weather/season fit (5%). Color compatibility uses real color theory — hue-wheel relationships (complementary/analogous/monochromatic), VISTIQ's established classic/neutral pairings, each item's optional secondary color, and down-weighting when an item's photo-analyzed color reliability was low — not just a lookup table (see `app/recommendation/color_theory.py`).
 3. **Personalization** — optional, request-scoped preferences (preferred/avoided colors, favoring favorited items) apply a small, capped adjustment on top of the compatibility score. No accounts, nothing persisted — every preference lives only on that one request.
 4. **Ranking** — all candidates are sorted by the (personalization-adjusted) score, descending, with a deterministic tiebreaker so identical requests always return identical results.
-5. **Diversity-aware selection** — a greedy, Jaccard-overlap reranking (a simple, deterministic form of Maximal Marginal Relevance) reduces near-duplicate outfits among the top results, without ever promoting a lower-scoring outfit purely for being different — the single best-scored outfit is always returned first. Can be disabled per-request (`diversify: false`).
+5. **Diversity-aware selection** — a greedy, Jaccard-overlap reranking (a simple, deterministic form of Maximal Marginal Relevance) reduces near-duplicate outfits among the top results, without ever promoting a lower-scoring outfit purely for being different — the single best-scored outfit is always returned first. Exact formula (`app/recommendation/diversity.py`): for each remaining candidate, `mmr_value = raw_score - 0.35 × max_jaccard_overlap_with_already_selected × raw_score`, where Jaccard is computed over item-ID sets against every outfit already chosen; the candidate with the highest `mmr_value` is picked next, searched within a window of `max(30, top_k × 10)` candidates. Can be disabled per-request (`diversify: false`).
 6. **Explanation** — each returned outfit includes both a natural-language reason and a structured breakdown (per-dimension scores, specific positive reasons, and honest caveats such as low color-extraction reliability or a partial outfit) derived directly from which scoring components were actually high for that specific outfit — never a generic or invented reason.
 7. **Anchoring** — a user can select one specific wardrobe item; every returned outfit is guaranteed to include it (through every stage above, including diversity selection), and the recommendation set changes when the anchor changes. If no valid outfit can include the anchor, the response explains that specifically.
 
@@ -114,25 +114,51 @@ The engine is intentionally free of randomness: the same request against the sam
 
 If the checkpoint is ever missing, retrain via the Colab notebook and place the exported file at `models/vistiq_clothing_classifier.pt`.
 
-## 11. How to run the frontend
+## 11. How to run it
+
+**Easiest — one script, both services:**
 
 ```powershell
-cd vistiq-frontend
-npm install
-npm run dev
+.\start-vistiq.ps1          # starts backend + frontend, each in its own window
+.\start-vistiq.ps1 -Stop    # stops both (only the processes it started)
 ```
 
-Serves at `http://localhost:5173`.
+See the script's own help (`Get-Help .\start-vistiq.ps1 -Full`) for what it checks before starting (venv present, `.env` present, `node_modules` present) and what it leaves alone (it never creates/modifies `.env`, the database, or installs dependencies — see §12 for first-time setup).
 
-## 12. How to run the backend
+**Manual, one service at a time:**
 
 ```powershell
+# Backend
 cd vistiq-backend
 .venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# Frontend (separate terminal)
+cd vistiq-frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Serves at `http://127.0.0.1:8000`. Interactive API docs at `/docs`. Copy `.env.example` to `.env` to override `VISTIQ_COOKIE_SECURE` (see §7) — the default (`false`) is already correct for this local setup.
+**Important:** bind the frontend to `127.0.0.1`, not the Vite default `localhost` — the session cookie is SameSite-scoped, and browsers treat `localhost` and `127.0.0.1` as different sites, which silently breaks login if the two servers don't agree on the same host. This was a real bug hit and fixed during development; `start-vistiq.ps1` always does this correctly.
+
+Backend serves at `http://127.0.0.1:8000` (interactive API docs at `/docs`, §13a). Frontend serves at `http://127.0.0.1:5173`. Copy `.env.example` to `.env` to override `VISTIQ_COOKIE_SECURE` (see §7) and, optionally, the Virtual Try-On worker settings (§16) — the defaults are already correct for local HTTP development.
+
+## 12. First-time setup
+
+```powershell
+# Backend
+cd vistiq-backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+copy .env.example .env
+
+# Frontend
+cd vistiq-frontend
+npm install
+```
+
+Run the backend test suite to confirm the environment is working: `cd vistiq-backend && .venv\Scripts\python.exe -m pytest -q` (§13).
 
 ## 13. Testing
 
@@ -140,12 +166,33 @@ The system has been manually integration-tested end-to-end, including with the r
 
 **Automated tests:** `vistiq-backend/tests/` — a pytest suite covering authentication (registration, login/logout, session expiry/invalidation, password hashing), cross-user authorization (every wardrobe/recommendation/image endpoint, confirmed un-reachable by a second user), the recommendation engine (candidate generation, all six scoring dimensions, anchor restriction, deterministic ranking, empty/insufficient-wardrobe handling), the wardrobe CRUD API, image upload validation, GrabCut segmentation + K-means color extraction + image-quality checks, and ML inference (mocked for speed in ordinary tests, plus one genuine unmocked model-load + real-inference smoke test). Run with `cd vistiq-backend && .venv\Scripts\python.exe -m pytest`. There is still no frontend automated test suite (vitest/jest) — frontend verification remains manual build/lint + browser walkthrough.
 
+## 13a. API reference
+
+Full interactive docs (Swagger UI) are always available at `http://127.0.0.1:8000/docs` while the backend is running — generated by FastAPI from the real route definitions, never hand-written separately (so it can't drift out of sync). The actual route list, pulled live from the running server's own `/openapi.json`:
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Liveness check |
+| POST | `/auth/register`, `/auth/login`, `/auth/logout` | Authentication |
+| GET | `/auth/me` | Current session's user |
+| GET / POST | `/wardrobe` | List / create wardrobe items |
+| POST | `/wardrobe/images` | Upload a garment photo |
+| GET | `/wardrobe/images/{filename}` | Serve an uploaded photo (ownership-checked) |
+| GET / PUT / DELETE | `/wardrobe/{item_id}` | Read / edit / delete one item |
+| POST | `/analyze-clothing` | Run the classifier + color/quality pipeline on an uploaded photo (§10) |
+| POST | `/recommend` | Generate ranked outfit recommendations (§3/§9) |
+| GET / POST | `/tryon` | List / create virtual try-on jobs (§16) |
+| GET / DELETE | `/tryon/{job_id}` | Read status / delete one job |
+| GET | `/tryon/results/{filename}` | Serve a generated result image (ownership-checked) |
+
+Every route other than `/health`, `/`, and the two unauthenticated auth routes (`register`/`login`) requires an active session; every state-changing route additionally requires the CSRF header (§7); every per-resource route filters by the authenticated user's own `user_id`, so a cross-user id behaves identically to one that doesn't exist (plain 404).
+
 ## 14. Current limitations
 
 - Automatic color extraction is improved but still not perfectly foreground-aware — GrabCut segmentation (see §10, `ml/README.md`) assumes a roughly centered garment with background nearer the edges, and can fail on off-center photos or backgrounds close in color to the garment; it is intentionally treated as a suggestion only either way, and the user-confirmed color is what's actually saved and scored. See §10.
 - Backend now has an automated pytest suite (Phase 1); the frontend still has no automated test suite (vitest/jest) — its verification remains manual/scripted integration testing.
 - No deployment configuration — local development only; no production security review has been performed, and VISTIQ should not be treated as production-ready as-is (see §7's cookie/CSRF notes and the no-scheduled-session-cleanup limitation).
-- Uploaded photos are stored locally on disk (`vistiq-backend/data/uploads/`) with no size cap on the directory as a whole and no cleanup of orphaned files if a wardrobe item is later deleted — acceptable for a local PBL prototype, not for production use.
+- Uploaded photos are stored locally on disk (`vistiq-backend/data/uploads/`) with no size cap on the directory as a whole — acceptable for a local PBL prototype, not for production use. (Deleting a wardrobe item *does* remove its uploaded file — verified live and covered by `test_deleting_item_removes_its_uploaded_image_file` — this is no longer a gap.)
 - Login/register are not behind CSRF protection (standard practice — there's no prior session to protect at that point), which leaves a low-severity "login CSRF" theoretical gap.
 
 ## 15. Future scope
@@ -163,3 +210,8 @@ A user can see one of their own wardrobe garments rendered onto a photo of thems
 Full detail — exact verified dependency versions (several deviate from CatVTON's own `requirements.txt` for documented reasons), the real inference numbers, the worker HTTP contract and bearer-auth setup, the temporary tunnel connection, the Phase 5.3 evaluation methodology and results, licensing, and how to reproduce the Colab run — is in **[`docs/virtual-tryon.md`](docs/virtual-tryon.md)**.
 
 Frontend: `vistiq-frontend/src/pages/TryOn.tsx`, routed at `/try-on`. Backend: `vistiq-backend/app/routes/tryon.py`, `app/services/tryon_worker.py`, `app/services/tryon_storage.py`, `app/database/models.py:TryOnJob`.
+
+## 17. Demonstration and viva preparation
+
+- **[`docs/demo-script.md`](docs/demo-script.md)** — a 10–15 minute university demonstration walkthrough, including an honest fallback for when the Colab GPU worker is disconnected.
+- **[`docs/viva-guide.md`](docs/viva-guide.md)** — source-code-grounded viva prep: one-line + detailed answers for the ML, computer vision, recommendation engine, backend, and security topics covered in this README, plus likely examiner follow-ups.
