@@ -5,6 +5,7 @@ __pycache__/
 
 # Environment variables
 .env
+.env.bak-*
 
 # Node
 node_modules/
@@ -40,3 +41,12 @@ vistiq-backend/data/tryon_results/
 # redistributing them from this repo would be a separate copy beyond
 # what CatVTON's own CC BY-NC-SA 4.0 demo distribution already covers.
 /demo-assets/
+
+# Local-only screenshot evidence from the 2026-11-13 GPU execution session
+# (a crop of a genuine inference result using CatVTON's own official demo
+# photos — same licensing reasoning as /demo-assets/ above, kept locally
+# only). Documented in docs/CATVTON_GPU_EXECUTION_REPORT.md, not committed.
+/docs/catvton-gpu-evidence/
+
+# Temporary scratch files
+.worker_token.tmp
