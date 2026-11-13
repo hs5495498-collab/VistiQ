@@ -1,0 +1,43 @@
+# VISTIQ CatVTON GPU worker -- verified working dependency set (2026-11-13,
+# Python 3.9.25, Tesla T4, CUDA driver 580.82.07 / reported CUDA 13.0).
+#
+# Install in a DEDICATED Python 3.9 virtual environment -- never into
+# vistiq-backend's own CPU-only venv. See README.md for the exact,
+# verified setup order (torch must be installed first, from the cu121
+# index; detectron2+DensePose must be installed separately afterwards,
+# it is NOT a plain pip requirement -- see README.md step 4).
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.4.0
+torchvision==0.19.0
+
+accelerate==1.6.0
+diffusers==0.30.3
+huggingface_hub
+matplotlib==3.9.1
+numpy==1.26.4
+opencv_python==4.10.0.84
+pillow==10.3.0
+PyYAML==6.0.1
+scipy==1.13.1
+setuptools==69.5.1
+wheel
+scikit-image==0.24.0
+tqdm==4.66.4
+transformers==4.46.3
+xformers==0.0.27.post2
+Ninja==1.11.1.1
+gradio==4.41.0
+peft==0.17.1
+
+# detectron2/DensePose build-time runtime deps (detectron2 itself is
+# installed separately, see README.md)
+fvcore==0.1.5.post20221221
+cloudpickle==3.0.0
+omegaconf==2.3.0
+pycocotools==2.0.8
+av==12.3.0
+
+# Worker HTTP server
+fastapi==0.115.6
+uvicorn==0.34.0
+python-multipart==0.0.20
