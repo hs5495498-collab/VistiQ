@@ -1,0 +1,25 @@
+# Environment variables (contains the real worker token)
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Logs
+*.log
+
+# Local scratch output (saved try-on results during manual testing)
+output/
+
+# Model weights / downloaded sources -- never commit these. They're
+# fetched at startup via huggingface_hub's own cache
+# (~/.cache/huggingface/hub), not stored in this directory, but this
+# rule stays as a safety net in case anything is ever manually placed
+# here.
+*.safetensors
+*.ckpt
+*.pkl
+*.pth
+checkpoints/
